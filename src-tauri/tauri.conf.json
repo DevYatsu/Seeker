@@ -24,12 +24,13 @@
       "csp": null,
       "capabilities": [
         {
-          "identifier": "draggable-window",
+          "identifier": "window-controls",
           "windows": [
             "*"
           ],
           "permissions": [
-            "core:window:allow-start-dragging"
+            "core:window:allow-start-dragging",
+            "core:window:allow-toggle-maximize"
           ]
         }
       ]

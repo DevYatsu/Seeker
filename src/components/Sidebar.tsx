@@ -11,7 +11,14 @@ type SidebarProps = {
 export default function Sidebar(props: SidebarProps) {
   return (
     <aside class="sidebar">
-      <div class="sidebar-header">
+      <div class="sidebar-header" style="visibility: hidden;">
+        <AppIcon
+          pack={props.iconPack}
+          name="LayoutGrid"
+          size={20}
+          class="brand-icon"
+        />
+        <span class="brand-name">Seeker</span>
       </div>
 
       <nav class="sidebar-nav">
@@ -23,6 +30,7 @@ export default function Sidebar(props: SidebarProps) {
                 <li
                   class={`nav-item ${props.activeLocation === loc.id ? "active" : ""}`}
                   onClick={() => props.setActiveLocation(loc.id)}
+                  title={loc.label}
                 >
                   <AppIcon pack={props.iconPack} name={loc.icon} size={18} />
                   <span>{loc.label}</span>
@@ -40,6 +48,7 @@ export default function Sidebar(props: SidebarProps) {
                 <li
                   class={`nav-item ${props.activeLocation === drive.id ? "active" : ""}`}
                   onClick={() => props.setActiveLocation(drive.id)}
+                  title={drive.label}
                 >
                   <AppIcon pack={props.iconPack} name={drive.icon} size={18} />
                   <span>{drive.label}</span>

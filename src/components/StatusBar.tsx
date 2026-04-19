@@ -6,20 +6,24 @@ type StatusBarProps = {
 export default function StatusBar(props: StatusBarProps) {
   return (
     <footer class="status-bar">
-      <span class="status-left">
-        {props.itemCount} items
+      <div class="status-left">
+        <span class="status-item">{props.itemCount} items</span>
         {props.selectionCount > 0 && (
-          <>
-            <span class="status-separator">|</span>
-            <span class="selection-info">
-              {props.selectionCount} {props.selectionCount === 1 ? 'item' : 'items'} selected
-            </span>
-          </>
+          <span class="status-item selection">
+            {props.selectionCount}{" "}
+            {props.selectionCount === 1 ? "item" : "items"} selected
+          </span>
         )}
-      </span>
-      <span class="status-right">
-        42.5 GB available
-      </span>
+      </div>
+
+      <div class="status-right">
+        <div class="storage-info">
+          <div class="storage-label">124.5 GB free</div>
+          <div class="storage-meter">
+            <div class="storage-fill" style="width: 65%;"></div>
+          </div>
+        </div>
+      </div>
     </footer>
   );
 }
