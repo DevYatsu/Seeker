@@ -1,8 +1,8 @@
 import { AppIcon, IconPack } from "./AppIcon";
-import { sidebarLocations } from "../utils/mockData";
 
 type ToolbarProps = {
   activeLocation: string;
+  activeLocationLabel: string;
   viewMode: "list" | "grid";
   setViewMode: (val: "list" | "grid") => void;
   searchQuery: string;
@@ -23,10 +23,7 @@ export default function Toolbar(props: ToolbarProps) {
         <span class="breadcrumb">
           <span class="crum-segment">yanis</span>
           <span class="crum-separator">/</span>
-          <span class="crum-segment bold">
-            {sidebarLocations.find((l) => l.id === props.activeLocation)
-              ?.label || props.activeLocation}
-          </span>
+          <span class="crum-segment bold">{props.activeLocationLabel}</span>
         </span>
       </div>
 

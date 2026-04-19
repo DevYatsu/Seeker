@@ -12,12 +12,6 @@ export default function Sidebar(props: SidebarProps) {
   return (
     <aside class="sidebar">
       <div class="sidebar-header">
-        <div class="traffic-lights">
-          <span class="light red"></span>
-          <span class="light yellow"></span>
-          <span class="light green"></span>
-        </div>
-        <h1 class="app-title">Seeker</h1>
       </div>
 
       <nav class="sidebar-nav">
