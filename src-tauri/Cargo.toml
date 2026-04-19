@@ -22,6 +22,13 @@ tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sysinfo = "0.38.4"
+rayon = "1.12.0"
+ignore = "0.4.25"
+num_cpus = "1.17.0"
+trash = "5.2.0"
+opener = "0.8.4"
+tauri-plugin-dialog = "2.7.0"
 
 [profile.release]
 lto = true
