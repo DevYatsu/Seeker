@@ -1,8 +1,8 @@
 export default function TitleBar() {
   return (
-    <div class="title-bar" data-tauri-drag-region>
-      <div class="title-bar-content">
-        <span class="app-title-text">Seeker</span>
+    <div data-tauri-drag-region class="title-bar">
+      <div data-tauri-drag-region class="title-bar-content">
+        <span data-tauri-drag-region class="app-title-text">Seeker</span>
       </div>
     </div>
   );

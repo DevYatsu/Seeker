@@ -114,6 +114,7 @@ body, html {
   font-weight: 600;
   color: var(--text-muted);
   opacity: 0.8;
+  user-select: none;
 }
 
 .app-container {
