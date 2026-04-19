@@ -12,6 +12,12 @@ type ToolbarProps = {
   canGoForward: boolean;
   onBack: () => void;
   onForward: () => void;
+  sortBy: "name" | "size" | "date";
+  setSortBy: (val: "name" | "size" | "date") => void;
+  sortOrder: "asc" | "desc";
+  setSortOrder: (val: "asc" | "desc") => void;
+  separateFolders: boolean;
+  setSeparateFolders: (val: boolean) => void;
 };
 
 export default function Toolbar(props: ToolbarProps) {
@@ -33,10 +39,6 @@ export default function Toolbar(props: ToolbarProps) {
           <AppIcon pack={props.iconPack} name="ChevronRight" size={18} />
         </button>
         <span class="breadcrumb">
-          <span class="crum-prefix">
-            <span class="crum-segment">yanis</span>
-            <span class="crum-separator">/</span>
-          </span>
           <span class="crum-segment bold" title={props.activeLocationLabel}>
             {props.activeLocationLabel}
           </span>
@@ -44,6 +46,37 @@ export default function Toolbar(props: ToolbarProps) {
       </div>
 
       <div class="toolbar-right">
+        <div class="sort-controls">
+          <select 
+            class="sort-select" 
+            value={props.sortBy} 
+            onChange={(e) => props.setSortBy(e.currentTarget.value as any)}
+          >
+            <option value="name">Name</option>
+            <option value="size">Size</option>
+            <option value="date">Date</option>
+          </select>
+          <button 
+            class="sort-btn toggle-btn" 
+            title="Toggle sort order"
+            onClick={() => props.setSortOrder(props.sortOrder === "asc" ? "desc" : "asc")}
+          >
+            <AppIcon 
+              pack={props.iconPack} 
+              name={props.sortOrder === "asc" ? "ChevronRight" : "ChevronLeft"} 
+              size={14} 
+              style={{ transform: props.sortOrder === "asc" ? "rotate(90deg)" : "rotate(-90deg)" }}
+            />
+          </button>
+          <button 
+            class={`sort-btn toggle-btn ${props.separateFolders ? "active" : ""}`}
+            title="Separate folders from files"
+            onClick={() => props.setSeparateFolders(!props.separateFolders)}
+          >
+            <AppIcon pack={props.iconPack} name="Folder" size={14} />
+          </button>
+        </div>
+
         <div class="view-toggles">
           <button
             class={`toggle-btn ${props.viewMode === "list" ? "active" : ""}`}
