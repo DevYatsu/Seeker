@@ -37,13 +37,16 @@ export function useExplorerData(options: {
 			if (!path) return [];
 			const results = await fileSystem.listDirectory(path, showHidden);
 			return results.map((r) => ({
-				id: r.path,
-				name: r.name,
-				type: r.is_dir ? "folder" : "file",
-				size: r.size,
-				updatedAt: new Date(r.updated_at * 1000).toISOString(),
-				ext: r.name.includes(".") ? r.name.split(".").pop() : undefined,
-			}));
+        id: r.path,
+        name: r.name,
+        type: r.is_dir ? "folder" : "file",
+        size: r.size,
+        updatedAt: new Date(r.updated_at * 1000).toISOString(),
+        ext:
+          r.name.indexOf(".") != -1  && r.name.indexOf(".") > r.name.length - 6
+            ? r.name.split(".").pop()
+            : "--",
+      }));
 		},
 	);
 
