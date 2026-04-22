@@ -2,8 +2,9 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Manager, Wry};
 
 pub fn create_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
-    let settings_m = MenuItem::with_id(app, "settings", "Preferences...", true, Some("CmdOrCtrl+,"))?;
-    
+    let settings_m =
+        MenuItem::with_id(app, "settings", "Preferences...", true, Some("CmdOrCtrl+,"))?;
+
     let app_m = Submenu::with_items(
         app,
         "Seeker",
@@ -27,11 +28,14 @@ pub fn handle_menu_event(app_handle: &AppHandle, event: tauri::menu::MenuEvent) 
             let _ = tauri::WebviewWindowBuilder::new(
                 app_handle,
                 "settings",
-                tauri::WebviewUrl::App("/?window=settings".into())
+                tauri::WebviewUrl::App("/?window=settings".into()),
             )
-            .title("Preferences")
-            .inner_size(400.0, 350.0)
-            .resizable(false)
+            .title("")
+            .inner_size(850.0, 650.0)
+            .resizable(true)
+            .always_on_top(true)
+            .transparent(true)
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
             .build();
         }
     }

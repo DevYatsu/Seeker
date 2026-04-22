@@ -1,542 +1,357 @@
-import { createSignal, createMemo, onMount, createEffect } from "solid-js";
-import { type FileItem } from "../utils/mockData";
-import { useSettings } from "../hooks/useSettings";
-import { useHistory } from "../hooks/useHistory";
-import { useSelection } from "../hooks/useSelection";
-import { useContextMenu } from "../hooks/useContextMenu";
-import { 
-  getUserLocations, 
-  searchFiles, 
-  listDirectory, 
-  openItem,
-  moveToTrash,
-  deletePermanently,
-  renameItem,
-  createDirectory,
-  createFile,
-  copyItems,
-  duplicateItems,
-  openInTerminal,
-  type NavigationLocation 
-} from "../services/apiService";
+import { createEventListener } from "@solid-primitives/event-listener";
+import { createEffect, createSignal, Suspense, onMount, onCleanup } from "solid-js";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
-import Sidebar from "../components/Sidebar";
-import Toolbar from "../components/Toolbar";
-import FileBrowser from "../components/FileBrowser";
-import StatusBar from "../components/StatusBar";
+import ContextMenu from "../components/ContextMenu";
+import LoadingOverlay from "../components/LoadingOverlay";
 import TitleBar from "../components/TitleBar";
-import ContextMenu, { ContextMenuItem } from "../components/ContextMenu";
-import { FileIcon } from "../components/FileBrowser/FileIcon";
-import { formatSize, formatDate } from "../utils/formatters";
+import { ExplorerModals } from "../features/explorer/components/ExplorerModals";
+// Feature Components
+import FileBrowser, {
+	type InteractionEvent,
+} from "../features/explorer/components/FileBrowser";
+import Sidebar from "../features/explorer/components/Sidebar";
+import StatusBar from "../features/explorer/components/StatusBar";
+import Toolbar from "../features/explorer/components/Toolbar";
+import TabBar from "../features/explorer/components/TabBar";
+import { useExplorerContextMenu } from "../features/explorer/hooks/useExplorerContextMenu";
+import { useExplorerData } from "../features/explorer/hooks/useExplorerData";
+import { useExplorerNavigation } from "../features/explorer/hooks/useExplorerNavigation";
+import { useFolderSizes } from "../features/explorer/hooks/useFolderSizes";
+import { useExplorerState } from "../features/explorer/hooks/useExplorerState";
+import { useFileOperations } from "../features/explorer/hooks/useFileOperations";
+import { useSelectionLogic } from "../features/explorer/hooks/useSelectionLogic";
+import { useContextMenu } from "../hooks/useContextMenu";
+import { useSettings } from "../hooks/useSettings";
+import { fileSystem } from "../services/apiService";
 
-export type SortBy = "name" | "size" | "date";
-export type SortOrder = "asc" | "desc";
-
+/**
+ * Explorer ViewModel / Container Component
+ * This component acts as the "glue" between business logic (hooks/services) and UI.
+ * It follows the principle of separating UI from logic by orchestrating specialized hooks.
+ */
 export default function Explorer() {
-  const { iconPack } = useSettings();
-  const history = useHistory("home");
-  
-  const [locations, setLocations] = createSignal<NavigationLocation[]>([]);
-  const [searchQuery, setSearchQuery] = createSignal("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = createSignal("");
-  const [viewMode, setViewMode] = createSignal<"list" | "grid">("list");
-  const [searchResults, setSearchResults] = createSignal<FileItem[]>([]);
-  const [currentFiles, setCurrentFiles] = createSignal<FileItem[]>([]);
-  const [isSearching, setIsSearching] = createSignal(false);
-  const [refreshTrigger, setRefreshTrigger] = createSignal(0);
-  
-  const [sortBy, setSortBy] = createSignal<SortBy>("name");
-  const [sortOrder, setSortOrder] = createSignal<SortOrder>("asc");
-  const [separateFolders, setSeparateFolders] = createSignal(false);
-  
-  const [promptConfig, setPromptConfig] = createSignal<{ title: string; defaultValue?: string; onSubmit: (val: string) => void } | null>(null);
-  const [infoModal, setInfoModal] = createSignal<{ file: FileItem } | null>(null);
+	// 1. Core Services & Domain Logic
+	const { iconPack } = useSettings();
+	const contextMenu = useContextMenu();
 
-  const currentAbsolutePath = createMemo(() => {
-    const loc = locations().find(l => l.id === history.currentPath);
-    return loc ? loc.path : history.currentPath;
-  });
+	// 2. Logic Hooks (ViewModel State)
+	const state = useExplorerState();
+	const nav = useExplorerNavigation();
 
-  const refresh = () => setRefreshTrigger(prev => prev + 1);
+	const data = useExplorerData({
+		currentPath: nav.currentAbsolutePath,
+		refreshTrigger: state.refreshTrigger,
+		searchQuery: state.searchQuery,
+		sortBy: state.sortBy,
+		sortOrder: state.sortOrder,
+		separateFolders: state.separateFolders,
+		showHidden: state.showHidden,
+	});
 
-  // Debounce search input
-  createEffect(() => {
-    const query = searchQuery();
-    const timeout = setTimeout(() => {
-      setDebouncedSearchQuery(query);
-    }, 200);
-    return () => clearTimeout(timeout);
-  });
+	const selection = useSelectionLogic(data.displayedFiles);
+	const folderSizes = useFolderSizes();
 
-  createEffect(async () => {
-    const root = currentAbsolutePath();
-    refreshTrigger(); // Track refresh
-    if (root) {
-      try {
-        const results = await listDirectory(root);
-        setCurrentFiles(results.map(r => ({
-          id: r.path,
-          name: r.name,
-          type: r.is_dir ? "folder" : "file",
-          size: r.size,
-          updatedAt: new Date(r.updated_at * 1000).toISOString(),
-          ext: r.name.includes('.') ? r.name.split('.').pop() : undefined
-        })));
-      } catch (err) {
-        console.error("Failed to list directory:", err);
-      }
-    }
-  });
+	const ops = useFileOperations({
+		currentRoot: nav.currentAbsolutePath,
+		refresh: state.refresh,
+		mutate: data.mutate,
+	});
 
-  createEffect(async () => {
-    const query = debouncedSearchQuery();
-    if (query.length >= 2) {
-      setIsSearching(true);
-      try {
-        const root = currentAbsolutePath();
-        const results = await searchFiles(root, query);
-        setSearchResults(results.map(r => ({
-          id: r.path,
-          name: r.name,
-          type: r.is_dir ? "folder" : "file",
-          size: r.size,
-          updatedAt: new Date(r.updated_at * 1000).toISOString(),
-          ext: r.name.includes('.') ? r.name.split('.').pop() : undefined
-        })));
-      } catch (err) {
-        console.error("Search failed:", err);
-      } finally {
-        setIsSearching(false);
-      }
-    } else {
-      setSearchResults([]);
-    }
-  });
+	// 3. UI-only State (Modals)
+	const [promptConfig, setPromptConfig] = createSignal<
+		import("../features/explorer/components/ExplorerModals").PromptConfig | null
+	>(null);
+	const [infoModal, setInfoModal] = createSignal<
+		import("../features/explorer/components/ExplorerModals").InfoModal | null
+	>(null);
 
-  const displayedFiles = createMemo(() => {
-    let files = searchQuery().length >= 2 ? searchResults() : currentFiles();
-    
-    return [...files].sort((a, b) => {
-      // Folders at the top only if separated
-      if (separateFolders() && a.type !== b.type) {
-        return a.type === "folder" ? -1 : 1;
-      }
-      
-      let comparison = 0;
-      switch (sortBy()) {
-        case "name":
-          comparison = a.name.localeCompare(b.name);
-          break;
-        case "size":
-          comparison = a.size - b.size;
-          break;
-        case "date":
-          comparison = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
-          break;
-      }
-      
-      return sortOrder() === "asc" ? comparison : -comparison;
-    });
-  });
+	// 4. Action Handlers (Separating Event Logic from UI)
+	const handleItemInteract = (event: InteractionEvent) => {
+		if (event.rightClick) {
+			contextMenu.open(window.event as MouseEvent); // Hacky for now, better to pass coords
+			if (!selection.selectedIds().includes(event.id)) {
+				selection.setSelectedIds([event.id]);
+			}
+		} else {
+			selection.selectItem(event.id, {
+				multi: event.multi,
+				range: event.range,
+			});
+		}
+	};
 
-  const selection = useSelection(displayedFiles);
-  const contextMenu = useContextMenu();
-  const [clipboard, setClipboard] = createSignal<string[]>([]);
+	const handleOpen = (id: string) => {
+		const file = data.displayedFiles().find((f) => f.id === id);
+		file?.type === "folder" ? nav.navigate(id) : fileSystem.openItem(id);
+	};
 
-  // Clear selection when path changes
-  createEffect(() => {
-    history.currentPath; // Track path
-    selection.setSelectedIds([]);
-  });
+	// 5. Computed Menus (Logic for what actions are available)
+	const menuItems = useExplorerContextMenu({
+		selection,
+		ops,
+		nav,
+		data,
+		handlers: {
+			onOpen: handleOpen,
+			setPromptConfig,
+			setInfoModal,
+			openInTerminal: fileSystem.openInTerminal,
+			refresh: state.refresh,
+		},
+	});
 
-  // Global Keyboard Shortcuts
-  createEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input (like search box)
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+	// 6. Global Side Effects (Lifecycle/Environment logic)
+	createEffect(() => {
+		nav.history.currentPath;
+		selection.clearSelection();
+		state.setSearchQuery("");
+		folderSizes.clearCache();
+	});
 
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+	// File Watcher Effect
+	createEffect(() => {
+		const path = nav.currentAbsolutePath();
+		if (!path || path === "home") return;
 
-      if (cmdOrCtrl && e.key.toLowerCase() === 'c') {
-        if (selection.selectedIds().length > 0) {
-          setClipboard(selection.selectedIds());
-          console.log("Copied to clipboard", selection.selectedIds());
-        }
-      }
+		let unlisten: () => void;
+		let isActive = true;
 
-      if (cmdOrCtrl && e.key.toLowerCase() === 'v') {
-        const currentRoot = currentAbsolutePath();
-        if (clipboard().length > 0 && currentRoot) {
-          await copyItems(clipboard(), currentRoot);
-          setClipboard([]); // Standard File explorer logic often keeps clipboard, but matching existing context logic
-          refresh();
-        }
-      }
+		invoke("watch_directory", { path }).catch(console.error);
 
-      if (e.key === "Backspace" || e.key === "Delete") {
-        if (selection.selectedIds().length > 0) {
-          if (isTrash()) {
-             await deletePermanently(selection.selectedIds());
-          } else {
-             await moveToTrash(selection.selectedIds());
-          }
-          refresh();
-        }
-      }
-    };
+		listen("directory-changed", () => {
+			if (isActive) {
+				state.refresh();
+			}
+		}).then((fn) => {
+			unlisten = fn;
+		});
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  });
+		onCleanup(() => {
+			isActive = false;
+			invoke("unwatch_directory").catch(console.error);
+			if (unlisten) unlisten();
+		});
+	});
 
-  onMount(async () => {
-    try {
-      const locs = await getUserLocations();
-      setLocations(locs);
-    } catch (err) {
-      console.error("Failed to fetch user locations:", err);
-    }
-  });
+	createEventListener(window, "keydown", async (e) => {
+		// Skip when typing in inputs
+		if (
+			e.target instanceof HTMLInputElement ||
+			e.target instanceof HTMLTextAreaElement
+		)
+			return;
 
-  const activeLocationLabel = createMemo(() => {
-    const path = currentAbsolutePath();
-    // Try to find a matching system location to create a nice relative path
-    const bestLoc = locations()
-      .filter(l => path.startsWith(l.path))
-      .sort((a, b) => b.path.length - a.path.length)[0];
-    
-    if (bestLoc) {
-      if (path === bestLoc.path) return bestLoc.label;
-      const relative = path.slice(bestLoc.path.length).replace(/^[\\\/]/, "");
-      if (!relative) return bestLoc.label;
-      
-      const parts = relative.split(/[\\\/]/).filter(Boolean);
-      if (parts.length > 2) {
-        const intermediate = parts.slice(0, -1).map(p => p.charAt(0).toUpperCase());
-        return `${bestLoc.label} / ${intermediate.join(" / ")} / ${parts[parts.length - 1]}`;
-      }
-      
-      const full = `${bestLoc.label} / ${parts.join(" / ")}`;
-      if (full.length > 35) {
-        const intermediate = parts.slice(0, -1).map(p => p.charAt(0).toUpperCase());
-        return `${bestLoc.label} / ${intermediate.join(" / ")} / ${parts[parts.length - 1]}`;
-      }
-      return full;
-    }
-    
-    return path.length > 35 ? `...${path.slice(-32)}` : path;
-  });
+		const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+		const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+		const key = e.key;
 
-  const isTrash = createMemo(() => {
-    const loc = locations().find(l => l.id === "trash");
-    return loc ? history.currentPath === loc.id || history.currentPath === loc.path : false;
-  });
+		// --- Modifier combos ---
+		if (cmdOrCtrl) {
+			switch (key.toLowerCase()) {
+				case "c":
+					ops.handleCopy(selection.selectedIds());
+					return;
+				case "x":
+					ops.handleCut(selection.selectedIds());
+					return;
+				case "v":
+					ops.handlePaste();
+					return;
+				case "a":
+					e.preventDefault();
+					selection.selectAll();
+					return;
+				case "f":
+					e.preventDefault();
+					// Focus the search input
+					document.querySelector<HTMLInputElement>(".search-box input")?.focus();
+					return;
+				case "t":
+					e.preventDefault();
+					nav.history.addTab();
+					return;
+				case "w":
+					e.preventDefault();
+					nav.history.closeTab(nav.history.activeTabIndex());
+					return;
+			}
+		}
 
-  const handleOpen = (id: string) => {
-    const file = displayedFiles().find(f => f.id === id);
-    if (file?.type === "folder") {
-      history.push(id);
-    } else {
-      openItem(id);
-    }
-  };
+		// --- Arrow key navigation ---
+		if (["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(key)) {
+			e.preventDefault();
+			const isGrid = state.viewMode() === "grid";
 
-  const handleContextMenu = (e: MouseEvent, id: string | null) => {
-    contextMenu.open(e);
-    if (id && !selection.selectedIds().includes(id)) {
-      selection.handleSelection(id, false, false);
-    }
-  };
+			let delta = 0;
+			if (key === "ArrowDown") delta = isGrid ? getGridColumns() : 1;
+			if (key === "ArrowUp") delta = isGrid ? -getGridColumns() : -1;
+			if (key === "ArrowRight") delta = isGrid ? 1 : 0;
+			if (key === "ArrowLeft") delta = isGrid ? -1 : 0;
 
-  const menuItems = createMemo<ContextMenuItem[]>(() => {
-    const count = selection.selectedIds().length;
-    const hasClipboard = clipboard().length > 0;
-    const inTrash = isTrash();
-    const root = currentAbsolutePath();
+			if (delta !== 0) {
+				selection.selectByDelta(delta, e.shiftKey);
+			}
+			return;
+		}
 
-    if (count === 0) {
-      if (inTrash) {
-        return [
-          { 
-            label: "Empty Trash", 
-            icon: "Trash", 
-            action: async () => {
-              const items = await listDirectory(root);
-              await deletePermanently(items.map(i => i.path));
-              refresh();
-            }, 
-            danger: true 
-          },
-        ];
-      }
-      return [
-        { 
-          label: "New Folder", 
-          icon: "FolderPlus", 
-          action: () => {
-            setPromptConfig({
-              title: "New Folder Name",
-              onSubmit: async (name) => {
-                await createDirectory(root, name);
-                refresh();
-              }
-            });
-          } 
-        },
-        { 
-          label: "New File", 
-          icon: "FilePlus", 
-          action: () => {
-            setPromptConfig({
-              title: "New File Name",
-              onSubmit: async (name) => {
-                await createFile(root, name);
-                refresh();
-              }
-            });
-          } 
-        },
-        { 
-          label: hasClipboard ? `Paste ${clipboard().length} Items` : "Paste", 
-          icon: "Clipboard", 
-          action: async () => {
-            await copyItems(clipboard(), root);
-            setClipboard([]);
-            refresh();
-          }, 
-          disabled: !hasClipboard,
-          separator: true 
-        },
-        { 
-          label: "Open in Terminal", 
-          icon: "Terminal", 
-          action: () => openInTerminal(root), 
-          separator: true 
-        },
-      ];
-    }
+		// --- Enter to open ---
+		if (key === "Enter") {
+			const ids = selection.selectedIds();
+			if (ids.length > 0) {
+				ids.forEach(handleOpen);
+			}
+			return;
+		}
 
-    const firstId = selection.selectedIds()[0];
+		// --- Escape to deselect ---
+		if (key === "Escape") {
+			selection.clearSelection();
+			state.setSearchQuery("");
+			return;
+		}
 
-    if (inTrash) {
-      return [
-        { 
-          label: count > 1 ? `Put Back ${count} Items` : "Put Back", 
-          icon: "Undo", 
-          action: async () => {
-            // Put back logic: on macOS, you'd usually use AppleScript. 
-            // For now, let's just move them to Home or similar if we can't find source.
-            // As a fallback, we'll just log it or suggest Delete Permanently.
-            console.log("Put back not natively implemented yet");
-          } 
-        },
-        { 
-          label: "Delete Permanently", 
-          icon: "Trash", 
-          action: async () => {
-            await deletePermanently(selection.selectedIds());
-            refresh();
-          }, 
-          danger: true, 
-          separator: true 
-        },
-        { 
-          label: "Get Info", 
-          icon: "Info", 
-          action: () => {
-            const item = displayedFiles().find(f => f.id === firstId);
-            if (item) {
-              setInfoModal({ file: item });
-            }
-          } 
-        },
-      ];
-    }
+		// --- Backspace/Delete ---
+		if (key === "Backspace" || key === "Delete") {
+			if (selection.selectedIds().length > 0) {
+				ops.handleDelete(selection.selectedIds(), nav.isTrash());
+			} else if (key === "Backspace" && nav.history.canGoBack) {
+				// No selection → go back
+				nav.history.goBack();
+			}
+			return;
+		}
+	});
 
-    return [
-      { 
-        label: count > 1 ? `Open ${count} Items` : "Open", 
-        icon: "ExternalLink", 
-        action: () => {
-          selection.selectedIds().forEach(id => handleOpen(id));
-        } 
-      },
-      { label: "Open in Terminal", icon: "Terminal", action: () => openInTerminal(firstId) },
-      { 
-        label: "Copy", 
-        icon: "Copy", 
-        action: () => setClipboard(selection.selectedIds()), 
-        separator: true 
-      },
-      { 
-        label: "Duplicate", 
-        icon: "CopyPlus", 
-        action: async () => {
-          await duplicateItems(selection.selectedIds());
-          refresh();
-        } 
-      },
-      { 
-        label: "Rename", 
-        icon: "Pencil", 
-        action: () => {
-          const item = displayedFiles().find(f => f.id === firstId);
-          setPromptConfig({
-            title: "Rename Item",
-            defaultValue: item?.name,
-            onSubmit: async (newName) => {
-              await renameItem(firstId, newName);
-              refresh();
-            }
-          });
-        }, 
-        separator: true 
-      },
-      { label: "Compress", icon: "Package", action: () => {} },
-      { 
-        label: "Move to Trash", 
-        icon: "Trash", 
-        action: async () => {
-          await moveToTrash(selection.selectedIds());
-          refresh();
-        }, 
-        danger: true, 
-        separator: true 
-      },
-      { 
-        label: "Get Info", 
-        icon: "Info", 
-        action: () => {
-          const item = displayedFiles().find(f => f.id === firstId);
-          if (item) {
-            setInfoModal({ file: item });
-          }
-        }, 
-        separator: true 
-      },
-    ];
-  });
+	/** Estimate number of columns in grid view for up/down arrow jumps */
+	const getGridColumns = (): number => {
+		const grid = document.querySelector(".folder-grid, .file-grid");
+		if (!grid) return 1;
+		const style = getComputedStyle(grid);
+		const cols = style.gridTemplateColumns.split(" ").length;
+		return cols || 1;
+	};
 
-  return (
-    <div class="root-view">
-      <TitleBar />
-      
-      <div class="app-container">
-        <Sidebar 
-          activeLocation={history.currentPath} 
-          setActiveLocation={history.push}
-          locations={locations()}
-        />
+	// Listen for external app drops
+	onMount(async () => {
+		const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+			if (event.payload.type === "drop") {
+				const paths = event.payload.paths;
+				if (paths && paths.length > 0) {
+					// To avoid conflicts with our internal drag and drop which we might also want to do via Tauri,
+					// let's check if the dropped files are already in our current view. 
+					// If they are, it's just an internal drag (which we handle natively).
+					// Wait! We actually just want to copy external files here.
+					// We can use our copy API which we can add to fileSystem!
+					const targetDir = nav.currentAbsolutePath();
+					fileSystem.copyItems(paths, targetDir).then(() => {
+						data.refresh();
+					}).catch((err) => {
+						console.error("External drop failed:", err);
+					});
+				}
+			}
+		});
 
-        <main class="main-content">
-          <Toolbar 
-            activeLocation={history.currentPath}
-            activeLocationLabel={activeLocationLabel()}
-            viewMode={viewMode()}
-            setViewMode={setViewMode}
-            searchQuery={searchQuery()}
-            setSearchQuery={setSearchQuery}
-            iconPack={iconPack()}
-            canGoBack={history.canGoBack}
-            canGoForward={history.canGoForward}
-            onBack={history.goBack}
-            onForward={history.goForward}
-            sortBy={sortBy()}
-            setSortBy={setSortBy}
-            sortOrder={sortOrder()}
-            setSortOrder={setSortOrder}
-            separateFolders={separateFolders()}
-            setSeparateFolders={setSeparateFolders}
-          />
+		onCleanup(() => {
+			unlisten();
+		});
+	});
 
-          <div class="browser-wrapper">
-            <FileBrowser 
-              files={displayedFiles()}
-              viewMode={viewMode()}
-              selectedFileIds={selection.selectedIds()}
-              onSelect={selection.handleSelection}
-              onOpen={handleOpen}
-              onContextMenu={handleContextMenu}
-              iconPack={iconPack()}
-            />
-          </div>
+	return (
+		<div class="root-view" classList={{ "is-navigating": nav.isPending() }}>
+			<TitleBar />
 
-          <StatusBar 
-            itemCount={displayedFiles().length}
-            selectionCount={selection.selectedIds().length}
-          />
-        </main>
-      </div>
+			<div class="app-container">
+				<Sidebar
+					activeLocation={nav.history.currentPath}
+					setActiveLocation={nav.navigate}
+					locations={nav.locations() || []}
+					onMove={ops.handleMove}
+				/>
 
-      {infoModal() && (
-        <div class="modal-overlay" onClick={() => setInfoModal(null)}>
-          <div class="modal-content info-modal" onClick={e => e.stopPropagation()}>
-            <div class="info-header">
-              <FileIcon type={infoModal()!.file.type} ext={infoModal()!.file.ext} pack={iconPack()} size={56} />
-              <h3 class="info-title">{infoModal()!.file.name}</h3>
-            </div>
-            <div class="info-body">
-              <div class="info-row">
-                <span class="info-label">Kind</span>
-                <span class="info-value">{infoModal()!.file.type === "folder" ? "Folder" : (infoModal()!.file.ext?.toUpperCase() || "DOC") + " Document"}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Size</span>
-                <span class="info-value">{infoModal()!.file.type === "folder" ? "--" : formatSize(infoModal()!.file.size)}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Where</span>
-                <span class="info-value path-value" title={infoModal()!.file.id}>{infoModal()!.file.id}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Modified</span>
-                <span class="info-value">{formatDate(infoModal()!.file.updatedAt)}</span>
-              </div>
-            </div>
-            <div class="modal-actions">
-              <button class="ok-btn" onClick={() => setInfoModal(null)}>Close Info</button>
-            </div>
-          </div>
-        </div>
-      )}
+				<main class="main-content">
+					<TabBar
+						tabs={nav.history.tabs()}
+						activeIndex={nav.history.activeTabIndex()}
+						onSelect={nav.history.setActiveTab}
+						onClose={nav.history.closeTab}
+						onAdd={() => nav.history.addTab()}
+						onMove={nav.history.moveTab}
+						iconPack={iconPack()}
+						getPathLabel={nav.getLabel}
+					/>
+					<Toolbar
+						activeLocation={nav.history.currentPath}
+						activeLocationLabel={nav.activeLocationLabel()}
+						currentAbsolutePath={nav.currentAbsolutePath()}
+						onNavigate={nav.navigate}
+						viewMode={state.viewMode()}
+						setViewMode={state.setViewMode}
+						searchQuery={state.searchQuery()}
+						setSearchQuery={state.setSearchQuery}
+						iconPack={iconPack()}
+						canGoBack={nav.history.canGoBack}
+						canGoForward={nav.history.canGoForward}
+						onBack={nav.history.goBack}
+						onForward={nav.history.goForward}
+						sortBy={state.sortBy()}
+						setSortBy={state.setSortBy}
+						sortOrder={state.sortOrder()}
+						setSortOrder={state.setSortOrder}
+						separateFolders={state.separateFolders()}
+						setSeparateFolders={state.setSeparateFolders}
+						showHidden={state.showHidden()}
+						setShowHidden={state.setShowHidden}
+					/>
 
-      {promptConfig() && (
-        <div class="modal-overlay" onClick={() => setPromptConfig(null)}>
-          <div class="modal-content" onClick={e => e.stopPropagation()}>
-            <h3>{promptConfig()!.title}</h3>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const input = new FormData(e.currentTarget).get('promptInput') as string;
-              if (input && input.trim()) {
-                promptConfig()!.onSubmit(input.trim());
-              }
-              setPromptConfig(null);
-            }}>
-              <input 
-                name="promptInput" 
-                type="text" 
-                autofocus 
-                value={promptConfig()!.defaultValue || ""} 
-                class="modal-input" 
-              />
-              <div class="modal-actions">
-                <button type="button" class="cancel-btn" onClick={() => setPromptConfig(null)}>Cancel</button>
-                <button type="submit" class="ok-btn">Confirm</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+					<div class="browser-wrapper">
+						<Suspense fallback={<LoadingOverlay active={true} />}>
+							<FileBrowser
+								files={data.displayedFiles()}
+								viewMode={state.viewMode()}
+								isSelected={selection.isSelected}
+								selectedIds={selection.selectedIds()}
+								onItemInteract={handleItemInteract}
+								onItemOpen={handleOpen}
+								onItemMove={ops.handleMove}
+								onBackgroundInteract={() => selection.clearSelection()}
+								iconPack={iconPack()}
+								folderSizes={folderSizes.sizes()}
+								calculating={folderSizes.calculating()}
+								onCalculateSize={folderSizes.calculateSize}
+								clipboard={ops.clipboard()}
+								clipboardMode={ops.clipboardMode()}
+							/>
+						</Suspense>
+						<LoadingOverlay active={nav.isPending()} />
+					</div>
 
-      <ContextMenu 
-        x={contextMenu.pos().x}
-        y={contextMenu.pos().y}
-        visible={contextMenu.visible()}
-        onClose={contextMenu.close}
-        items={menuItems()}
-        iconPack={iconPack()}
-      />
-    </div>
-  );
+					<StatusBar
+						itemCount={data.displayedFiles().length}
+						selectionCount={selection.selectedIds().length}
+					/>
+				</main>
+			</div>
+
+			<ExplorerModals
+				infoModal={infoModal()}
+				setInfoModal={setInfoModal}
+				promptConfig={promptConfig()}
+				setPromptConfig={setPromptConfig}
+				iconPack={iconPack()}
+			/>
+
+			<ContextMenu
+				x={contextMenu.pos().x}
+				y={contextMenu.pos().y}
+				visible={contextMenu.visible()}
+				onClose={contextMenu.close}
+				items={menuItems()}
+				iconPack={iconPack()}
+			/>
+		</div>
+	);
 }

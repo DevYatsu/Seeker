@@ -1,72 +1,258 @@
-import { createSignal, onMount, onCleanup } from "solid-js";
-import { IconPack } from "../components/AppIcon";
+import { makePersisted } from "@solid-primitives/storage";
+import { createEffect, createRoot, createSignal } from "solid-js";
+import { resourceService } from "../services/apiService";
 
-export type Theme = "dark" | "light";
+export type IconPack =
+	| "vscode"
+	| "material"
+	| "catppuccin/mocha"
+	| "catppuccin/frappe"
+	| "catppuccin/macchiato"
+	| "catppuccin/latte"
+	| "lucide";
 
-export function useSettings() {
-  const [theme, setThemeState] = createSignal<Theme>(
-    (localStorage.getItem("seeker-theme") as Theme) || "dark"
-  );
-  
-  const [iconPack, setIconPackState] = createSignal<IconPack>(
-    (localStorage.getItem("seeker-icon-pack") as IconPack) || "lucide"
-  );
+function createSettingsState() {
+	const [theme, setTheme] = makePersisted(
+		createSignal<"dark" | "light">("dark"),
+		{
+			name: "seeker-theme",
+			deserialize: (v: string) => {
+				try {
+					return JSON.parse(v);
+				} catch (_e) {
+					return v;
+				}
+			},
+		},
+	);
 
-  const [visibleNavIds, setVisibleNavIdsState] = createSignal<string[]>(
-    JSON.parse(localStorage.getItem("seeker-visible-nav") || '["home", "applications", "desktop", "documents", "downloads", "trash"]')
-  );
+	const [iconPack, setIconPack] = makePersisted(
+		createSignal<IconPack>("vscode"),
+		{
+			name: "seeker-icon-pack",
+			deserialize: (v: string) => {
+				try {
+					return JSON.parse(v);
+				} catch (_e) {
+					return v;
+				}
+			},
+		},
+	);
 
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
-    localStorage.setItem("seeker-theme", newTheme);
-    document.documentElement.dataset.theme = newTheme;
-  };
+	const [baseIconsPath, setBaseIconsPath] = makePersisted(
+		createSignal<string>(""),
+		{
+			name: "seeker-base-icons-path",
+			deserialize: (v: string) => {
+				try {
+					return JSON.parse(v);
+				} catch (_e) {
+					return v;
+				}
+			},
+		},
+	);
 
-  const setIconPack = (newPack: IconPack) => {
-    setIconPackState(newPack);
-    localStorage.setItem("seeker-icon-pack", newPack);
-  };
+	const [visibleNavIds, setVisibleNavIds] = makePersisted(
+		createSignal<string[]>([
+			"home",
+			"desktop",
+			"documents",
+			"downloads",
+			"pictures",
+			"music",
+			"videos",
+			"trash",
+		]),
+		{
+			name: "seeker-visible-nav-ids",
+		},
+	);
 
-  const setVisibleNavIds = (newIds: string[]) => {
-    setVisibleNavIdsState(newIds);
-    localStorage.setItem("seeker-visible-nav", JSON.stringify(newIds));
-  };
+	const [isDownloading, setIsDownloading] = createSignal(false);
+	const [downloadProgress, setDownloadProgress] = createSignal<{
+		pack: string;
+		status: string;
+	} | null>(null);
 
-  const toggleNavVisibility = (id: string) => {
-    const current = visibleNavIds();
-    const updated = current.includes(id) 
-      ? current.filter(i => i !== id) 
-      : [...current, id];
-    setVisibleNavIds(updated);
-  };
+	const [installedPacks, setInstalledPacks] = createSignal<string[]>([]);
+	const [installedFonts, setInstalledFonts] = createSignal<string[]>([]);
+	const [lastSync, setLastSync] = createSignal(Date.now());
 
-  onMount(() => {
-    document.documentElement.dataset.theme = theme();
+	// Sync function
+	const syncAssets = async () => {
+		const [packs, fonts, path] = await Promise.all([
+			resourceService.getInstalledPacks(),
+			resourceService.getInstalledFonts(),
+			resourceService.getBaseIconsPath(),
+		]);
+		setInstalledPacks(packs);
+		setInstalledFonts(fonts);
+		if (path) setBaseIconsPath(path);
+		setLastSync(Date.now());
+	};
 
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === "seeker-theme" && e.newValue) {
-        setThemeState(e.newValue as Theme);
-        document.documentElement.dataset.theme = e.newValue;
-      }
-      if (e.key === "seeker-icon-pack" && e.newValue) {
-        setIconPackState(e.newValue as IconPack);
-      }
-      if (e.key === "seeker-visible-nav" && e.newValue) {
-        setVisibleNavIdsState(JSON.parse(e.newValue));
-      }
-    };
-    
-    window.addEventListener("storage", handleStorage);
+	// Initial sync
+	createEffect(() => {
+		syncAssets();
+	});
 
-    onCleanup(() => {
-      window.removeEventListener("storage", handleStorage);
-    });
-  });
+	interface SettingsState {
+		theme: "dark" | "light";
+		iconPack: IconPack;
+		visibleNavIds: string[];
+	}
 
-  return { 
-    theme, setTheme, 
-    iconPack, setIconPack, 
-    visibleNavIds, toggleNavVisibility 
-  };
+	// Apply theme to document
+	createEffect(() => {
+		const currentTheme = theme();
+		document.documentElement.setAttribute("data-theme", currentTheme);
+		document.body.setAttribute("data-theme", currentTheme);
+	});
+
+	// Flag to prevent broadcast loops
+	let isRemoteUpdate = false;
+
+	// Listen for remote changes (from other windows)
+	import("@tauri-apps/api/event").then(({ listen, emit }) => {
+		// Sync filesystem assets
+		listen("sync-assets", () => syncAssets());
+
+		// Sync settings state
+		listen("sync-settings", (event: { payload: SettingsState }) => {
+			const {
+				theme: newTheme,
+				iconPack: newIconPack,
+				visibleNavIds: newNavIds,
+			} = event.payload;
+
+			import("solid-js").then(({ batch }) => {
+				batch(() => {
+					isRemoteUpdate = true;
+					if (newTheme && newTheme !== theme()) setTheme(newTheme);
+					if (newIconPack && newIconPack !== iconPack())
+						setIconPack(newIconPack);
+					if (
+						newNavIds &&
+						JSON.stringify(newNavIds) !== JSON.stringify(visibleNavIds())
+					) {
+						setVisibleNavIds(newNavIds);
+					}
+
+					// Reset flag after SolidJS batch or next tick
+					setTimeout(() => {
+						isRemoteUpdate = false;
+					}, 10);
+				});
+			});
+		});
+	});
+
+	const broadcastSettings = async () => {
+		if (isRemoteUpdate) return;
+		const { emit } = await import("@tauri-apps/api/event");
+		emit("sync-settings", {
+			theme: theme(),
+			iconPack: iconPack(),
+			visibleNavIds: visibleNavIds(),
+		} as SettingsState);
+	};
+
+	// Watch for settings changes and broadcast
+	createEffect(() => {
+		theme();
+		iconPack();
+		visibleNavIds();
+		broadcastSettings();
+	});
+
+	const notifySync = async () => {
+		const { emit } = await import("@tauri-apps/api/event");
+		emit("sync-assets");
+	};
+
+	const downloadPack = async (packId: string) => {
+		setIsDownloading(true);
+		setDownloadProgress({ pack: packId, status: "Downloading..." });
+		try {
+			await resourceService.downloadIcons(packId);
+			await syncAssets();
+			await notifySync();
+		} catch (err) {
+			console.error("Failed to download pack:", err);
+		} finally {
+			setIsDownloading(false);
+			setDownloadProgress(null);
+		}
+	};
+
+	const removePack = async (packId: string) => {
+		try {
+			await resourceService.deleteIconPack(packId);
+			await syncAssets();
+			await notifySync();
+		} catch (err) {
+			console.error("Failed to remove pack:", err);
+		}
+	};
+
+	const downloadFont = async (fontId: string, url: string) => {
+		setIsDownloading(true);
+		setDownloadProgress({ pack: fontId, status: "Downloading font..." });
+		try {
+			await resourceService.downloadResource(url, fontId, "font");
+			await syncAssets();
+			await notifySync();
+		} catch (err) {
+			console.error("Failed to download font:", err);
+		} finally {
+			setIsDownloading(false);
+			setDownloadProgress(null);
+		}
+	};
+
+	const removeFont = async (fontId: string) => {
+		try {
+			await resourceService.deleteResource(fontId, "font");
+			await syncAssets();
+			await notifySync();
+		} catch (err) {
+			console.error("Failed to remove font:", err);
+		}
+	};
+
+	const toggleNavVisibility = (id: string) => {
+		setVisibleNavIds((prev) =>
+			prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
+		);
+	};
+
+	return {
+		theme,
+		setTheme,
+		iconPack,
+		setIconPack,
+		baseIconsPath,
+		setBaseIconsPath,
+		visibleNavIds,
+		toggleNavVisibility,
+		isDownloading,
+		downloadProgress,
+		installedPacks,
+		installedFonts,
+		lastSync,
+		downloadPack,
+		removePack,
+		downloadFont,
+		removeFont,
+	};
 }
 
+// Create a global instance
+const settings = createRoot(createSettingsState);
+
+// Hook to access the global instance
+export function useSettings() {
+	return settings;
+}

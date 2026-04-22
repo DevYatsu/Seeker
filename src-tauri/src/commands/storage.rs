@@ -23,7 +23,7 @@ pub struct StorageStats {
 #[tauri::command]
 pub fn get_storage_stats() -> StorageStats {
     let disks = Disks::new_with_refreshed_list();
-    
+
     let mut disk_infos = Vec::new();
     let mut total_free = 0;
     let mut total_space = 0;
@@ -56,7 +56,7 @@ pub fn get_storage_stats() -> StorageStats {
                 total_space = disk.total_space();
             }
         }
-        
+
         #[cfg(windows)]
         {
             if mount.starts_with("C:") {

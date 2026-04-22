@@ -38,7 +38,10 @@ pub fn get_user_locations(app: AppHandle) -> Vec<NavigationLocation> {
             "videos" => path_resolver.video_dir(),
             "public" => path_resolver.public_dir(),
             "templates" => path_resolver.template_dir(),
-            "trash" => path_resolver.home_dir().map(|mut p| { p.push(".Trash"); p }),
+            "trash" => path_resolver.home_dir().map(|mut p| {
+                p.push(".Trash");
+                p
+            }),
             "applications" => {
                 #[cfg(target_os = "macos")]
                 {
@@ -47,9 +50,11 @@ pub fn get_user_locations(app: AppHandle) -> Vec<NavigationLocation> {
                 #[cfg(not(target_os = "macos"))]
                 {
                     // Fallback or skip for other OS as "Applications" is a macOS specific navigation item
-                    Err(tauri::path::Error::Generic("Applications dir only supported on macOS".into()))
+                    Err(tauri::path::Error::Generic(
+                        "Applications dir only supported on macOS".into(),
+                    ))
                 }
-            },
+            }
             _ => path_resolver.home_dir(),
         };
 
@@ -64,4 +69,3 @@ pub fn get_user_locations(app: AppHandle) -> Vec<NavigationLocation> {
 
     locations
 }
-

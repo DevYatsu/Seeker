@@ -1,97 +1,145 @@
 import { invoke } from "@tauri-apps/api/core";
 
-// --- Navigation ---
-export interface NavigationLocation {
-  id: string;
-  path: string;
-  label: string;
+export interface FileEntry {
+	name: string;
+	path: string;
+	is_dir: boolean;
+	size: number;
+	updated_at: number;
 }
 
-export const getUserLocations = async (): Promise<NavigationLocation[]> => {
-  return await invoke<NavigationLocation[]>("get_user_locations");
-};
-
-// --- Storage ---
-export interface DiskInfo {
-  name: string;
-  mount_point: string;
-  file_system: string;
-  total_space: number;
-  available_space: number;
-  is_removable: boolean;
-  is_read_only: boolean;
-  disk_kind: string;
+export interface NavigationLocation {
+	id: string;
+	path: string;
+	label: string;
 }
 
 export interface StorageStats {
-  disks: DiskInfo[];
-  total_free_bytes: number;
-  total_bytes: number;
+	total_free_bytes: number;
+	total_bytes: number;
+	disks: any[];
 }
 
-export const getStorageStats = async (): Promise<StorageStats> => {
-  return await invoke<StorageStats>("get_storage_stats");
-};
-
-// --- Search ---
-export interface SearchResult {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  size: number;
-  updated_at: number;
+/**
+ * Interface defining the contract for File System operations.
+ */
+export interface IFileSystemService {
+	getUserLocations(): Promise<NavigationLocation[]>;
+	getStorageStats(): Promise<StorageStats>;
+	listDirectory(path: string, showHidden?: boolean): Promise<FileEntry[]>;
+	searchFiles(rootPath: string, query: string): Promise<FileEntry[]>;
+	openItem(path: string): Promise<void>;
+	moveToTrash(paths: string[]): Promise<void>;
+	deletePermanently(paths: string[]): Promise<void>;
+	renameItem(path: string, newName: string): Promise<void>;
+	createDirectory(parentPath: string, name: string): Promise<void>;
+	createFile(parentPath: string, name: string): Promise<void>;
+	copyItems(sources: string[], targetDir: string): Promise<void>;
+	moveItems(sources: string[], targetDir: string): Promise<void>;
+	duplicateItems(paths: string[]): Promise<void>;
+	openInTerminal(path: string): Promise<void>;
+	calculateDirSize(path: string): Promise<number>;
 }
 
-export const searchFiles = async (rootPath: string, query: string): Promise<SearchResult[]> => {
-  return await invoke<SearchResult[]>("search_files", { rootPath, query });
-};
-
-export interface FileEntry {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  size: number;
-  updated_at: number;
+/**
+ * Interface defining the contract for Resource Management (Downloader, etc.).
+ */
+export interface IResourceService {
+	downloadIcons(folderPath: string): Promise<void>;
+	downloadResource(
+		url: string,
+		filename: string,
+		resourceType: string,
+	): Promise<void>;
+	deleteIconPack(packId: string): Promise<void>;
+	deleteResource(filename: string, resourceType: string): Promise<void>;
+	getInstalledPacks(): Promise<string[]>;
+	getInstalledFonts(): Promise<string[]>;
+	listResources(resourceType: string): Promise<string[]>;
+	getBaseIconsPath(): Promise<string>;
 }
 
-export const listDirectory = async (path: string): Promise<FileEntry[]> => {
-  return await invoke<FileEntry[]>("list_directory", { path });
-};
+/**
+ * Tauri implementation of the FileSystemService.
+ */
+export class TauriFileSystemService implements IFileSystemService {
+	async getUserLocations() {
+		return invoke<NavigationLocation[]>("get_user_locations");
+	}
+	async getStorageStats() {
+		return invoke<StorageStats>("get_storage_stats");
+	}
+	async listDirectory(path: string, showHidden?: boolean) {
+		return invoke<FileEntry[]>("list_directory", { path, showHidden });
+	}
+	async searchFiles(rootPath: string, query: string) {
+		return invoke<FileEntry[]>("search_files", { rootPath, query });
+	}
+	async openItem(path: string) {
+		return invoke("open_item", { path });
+	}
+	async moveToTrash(paths: string[]) {
+		return invoke("move_to_trash", { paths });
+	}
+	async deletePermanently(paths: string[]) {
+		return invoke("delete_permanently", { paths });
+	}
+	async renameItem(path: string, newName: string) {
+		return invoke("rename_item", { path, newName });
+	}
+	async createDirectory(parentPath: string, name: string) {
+		return invoke("create_directory", { parentPath, name });
+	}
+	async createFile(parentPath: string, name: string) {
+		return invoke("create_file", { parentPath, name });
+	}
+	async copyItems(sources: string[], targetDir: string) {
+		return invoke<void>("copy_items", { sources, targetDir });
+	}
+	async moveItems(sources: string[], targetDir: string) {
+		return invoke<void>("move_items", { sources, targetDir });
+	}
+	async duplicateItems(paths: string[]) {
+		return invoke<void>("duplicate_items", { paths });
+	}
+	async openInTerminal(path: string) {
+		return invoke("open_in_terminal", { path });
+	}
+	async calculateDirSize(path: string) {
+		return invoke<number>("calculate_dir_size", { path });
+	}
+}
 
-// --- File Operations ---
+/**
+ * Tauri implementation of the ResourceService.
+ */
+export class TauriResourceService implements IResourceService {
+	async downloadIcons(folderPath: string) {
+		return invoke("download_icons", { folderPath });
+	}
+	async downloadResource(url: string, filename: string, resourceType: string) {
+		return invoke("download_resource", { url, filename, resourceType });
+	}
+	async deleteIconPack(packId: string) {
+		return invoke("delete_icon_pack", { packId });
+	}
+	async deleteResource(filename: string, resourceType: string) {
+		return invoke("delete_resource", { filename, resourceType });
+	}
+	async getInstalledPacks() {
+		return invoke<string[]>("get_installed_packs");
+	}
+	async getInstalledFonts() {
+		return invoke<string[]>("get_installed_fonts");
+	}
+	async listResources(resourceType: string) {
+		return invoke<string[]>("list_resources", { resourceType });
+	}
+	async getBaseIconsPath() {
+		return invoke<string>("get_base_icons_path");
+	}
+}
 
-export const openItem = async (path: string): Promise<void> => {
-  return await invoke("open_item", { path });
-};
-
-export const moveToTrash = async (paths: string[]): Promise<void> => {
-  return await invoke("move_to_trash", { paths });
-};
-
-export const deletePermanently = async (paths: string[]): Promise<void> => {
-  return await invoke("delete_permanently", { paths });
-};
-
-export const renameItem = async (path: string, newName: string): Promise<void> => {
-  return await invoke("rename_item", { path, newName });
-};
-
-export const createDirectory = async (parentPath: string, name: string): Promise<void> => {
-  return await invoke("create_directory", { parentPath, name });
-};
-
-export const createFile = async (parentPath: string, name: string): Promise<void> => {
-  return await invoke("create_file", { parentPath, name });
-};
-
-export const copyItems = async (sources: string[], targetDir: string): Promise<void> => {
-  return await invoke("copy_items", { sources, targetDir });
-};
-
-export const duplicateItems = async (paths: string[]): Promise<void> => {
-  return await invoke("duplicate_items", { paths });
-};
-
-export const openInTerminal = async (path: string): Promise<void> => {
-  return await invoke("open_in_terminal", { path });
-};
+// Export singleton instances
+export const fileSystem = new TauriFileSystemService();
+export const resourceService = new TauriResourceService();
