@@ -1,4 +1,5 @@
-import { For, onCleanup, onMount, Show } from "solid-js";
+import { createEventListener } from "@solid-primitives/event-listener";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { AppIcon, type IconPack } from "./AppIcon";
 
 export interface ContextMenuItem {
@@ -21,6 +22,7 @@ type ContextMenuProps = {
 
 export default function ContextMenu(props: ContextMenuProps) {
 	let menuRef: HTMLDivElement | undefined;
+	const [pos, setPos] = createSignal({ x: props.x, y: props.y });
 
 	const handleClickOutside = (e: MouseEvent) => {
 		if (menuRef && !menuRef.contains(e.target as Node)) {
@@ -28,38 +30,40 @@ export default function ContextMenu(props: ContextMenuProps) {
 		}
 	};
 
-	onMount(() => {
-		document.addEventListener("mousedown", handleClickOutside);
-		document.addEventListener("wheel", props.onClose);
-	});
+	createEventListener(document, "mousedown", handleClickOutside);
+	createEventListener(document, "wheel", props.onClose);
 
-	onCleanup(() => {
-		document.removeEventListener("mousedown", handleClickOutside);
-		document.removeEventListener("wheel", props.onClose);
-	});
+	// Calculate bounded position when menu becomes visible or x/y changes
+	createEffect(() => {
+		if (props.visible) {
+			// Start with default position
+			setPos({ x: props.x, y: props.y });
 
-	// Ensure the menu stays within window bounds
-	const getPosition = () => {
-		let x = props.x;
-		let y = props.y;
+			// Wait for DOM to paint to get actual dimensions
+			requestAnimationFrame(() => {
+				if (menuRef) {
+					let x = props.x;
+					let y = props.y;
+					const { offsetWidth, offsetHeight } = menuRef;
 
-		if (menuRef) {
-			const { offsetWidth, offsetHeight } = menuRef;
-			if (x + offsetWidth > window.innerWidth) x -= offsetWidth;
-			if (y + offsetHeight > window.innerHeight) y -= offsetHeight;
+					if (x + offsetWidth > window.innerWidth) x -= offsetWidth;
+					if (y + offsetHeight > window.innerHeight) y -= offsetHeight;
+
+					setPos({ x, y });
+				}
+			});
 		}
-
-		return { x, y };
-	};
+	});
 
 	return (
 		<Show when={props.visible}>
 			<div
 				ref={menuRef}
 				class="context-menu"
+				role="menu"
 				style={{
-					left: `${getPosition().x}px`,
-					top: `${getPosition().y}px`,
+					left: `${pos().x}px`,
+					top: `${pos().y}px`,
 				}}
 			>
 				<div class="menu-list">

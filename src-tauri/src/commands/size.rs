@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use jwalk::WalkDir;
+use std::path::PathBuf;
 
 #[tauri::command]
 pub async fn calculate_dir_size(path: String) -> Result<u64, String> {

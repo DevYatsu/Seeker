@@ -3,7 +3,7 @@ import "../assets/App.css";
 import "../assets/Settings.css";
 import { AppIcon } from "../components/AppIcon";
 import TitleBar from "../components/TitleBar";
-import { useSettings } from "../hooks/useSettings";
+import { type IconPack, useSettings } from "../hooks/useSettings";
 import { fileSystem } from "../services/apiService";
 
 type SettingsTab = "appearance" | "typography" | "icons" | "navigation";
@@ -286,7 +286,7 @@ export default function Settings() {
 														<div style="display: flex; gap: 4px;">
 															<button
 																type="button"
-																onClick={() => setIconPack(pack.id as any)}
+																onClick={() => setIconPack(pack.id as IconPack)}
 																class={`btn-ui ${iconPack() === pack.id ? "primary" : ""}`}
 																style="flex: 1; justify-content: center;"
 															>

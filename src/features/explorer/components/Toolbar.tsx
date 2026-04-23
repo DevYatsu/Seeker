@@ -1,5 +1,6 @@
 import { For } from "solid-js";
 import { AppIcon, type IconPack } from "../../../components/AppIcon";
+import { useToolbar } from "../hooks/useToolbar";
 
 type ToolbarProps = {
 	activeLocation: string;
@@ -25,39 +26,13 @@ type ToolbarProps = {
 	setShowHidden: (val: boolean) => void;
 };
 
-/** Split an absolute path into clickable breadcrumb segments */
-function buildBreadcrumbs(
-	absPath: string,
-	label: string,
-): { name: string; path: string }[] {
-	if (!absPath || absPath === "home") return [{ name: label, path: absPath }];
-
-	const parts = absPath.split("/").filter(Boolean);
-	if (parts.length === 0) return [{ name: "/", path: "/" }];
-
-	// Build segments with cumulative paths
-	const segments: { name: string; path: string }[] = [];
-	for (let i = 0; i < parts.length; i++) {
-		segments.push({
-			name: parts[i],
-			path: "/" + parts.slice(0, i + 1).join("/"),
-		});
-	}
-
-	// Only show last 3 segments to avoid overflow, with ellipsis
-	if (segments.length > 3) {
-		return [
-			{ name: "…", path: segments[segments.length - 4].path },
-			...segments.slice(-3),
-		];
-	}
-
-	return segments;
-}
-
 export default function Toolbar(props: ToolbarProps) {
-	const breadcrumbs = () =>
-		buildBreadcrumbs(props.currentAbsolutePath, props.activeLocationLabel);
+	const {
+		breadcrumbs,
+		toggleSortOrder,
+		toggleSeparateFolders,
+		toggleShowHidden,
+	} = useToolbar(props);
 
 	return (
 		<header class="toolbar">
@@ -102,7 +77,9 @@ export default function Toolbar(props: ToolbarProps) {
 					<select
 						class="sort-select"
 						value={props.sortBy}
-						onChange={(e) => props.setSortBy(e.currentTarget.value as any)}
+						onChange={(e) =>
+							props.setSortBy(e.currentTarget.value as "name" | "size" | "date")
+						}
 					>
 						<option value="name">Name</option>
 						<option value="size">Size</option>
@@ -112,9 +89,7 @@ export default function Toolbar(props: ToolbarProps) {
 						type="button"
 						class="sort-btn toggle-btn"
 						title="Toggle sort order"
-						onClick={() =>
-							props.setSortOrder(props.sortOrder === "asc" ? "desc" : "asc")
-						}
+						onClick={toggleSortOrder}
 					>
 						<AppIcon
 							pack={props.iconPack}
@@ -132,7 +107,7 @@ export default function Toolbar(props: ToolbarProps) {
 						type="button"
 						class={`sort-btn toggle-btn ${props.separateFolders ? "active" : ""}`}
 						title="Separate folders from files"
-						onClick={() => props.setSeparateFolders(!props.separateFolders)}
+						onClick={toggleSeparateFolders}
 					>
 						<AppIcon pack={props.iconPack} name="Folder" size={14} />
 					</button>
@@ -159,7 +134,7 @@ export default function Toolbar(props: ToolbarProps) {
 					type="button"
 					class={`toggle-btn ${props.showHidden ? "active" : ""}`}
 					title={props.showHidden ? "Hide hidden files" : "Show hidden files"}
-					onClick={() => props.setShowHidden(!props.showHidden)}
+					onClick={toggleShowHidden}
 					style={{ padding: "5px 8px" }}
 				>
 					<AppIcon

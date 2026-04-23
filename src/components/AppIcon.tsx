@@ -1,83 +1,190 @@
-import * as Lucide from "lucide-solid";
+import {
+	AppWindow,
+	AudioLines,
+	Binary,
+	Check,
+	ChevronDown,
+	ChevronLeft,
+	ChevronRight,
+	ChevronUp,
+	Clipboard,
+	CloudDownload,
+	Copy,
+	CopyPlus,
+	Download,
+	ExternalLink,
+	Eye,
+	EyeOff,
+	File,
+	FileArchive,
+	FileCode,
+	FilePlus,
+	FileSearch,
+	FileText,
+	Film,
+	Folder,
+	FolderOpen,
+	FolderPlus,
+	GitBranch,
+	HardDrive,
+	House,
+	Image,
+	Info,
+	LayoutGrid,
+	List,
+	Monitor,
+	Moon,
+	MoreHorizontal,
+	MoreVertical,
+	Music,
+	Package,
+	Palette,
+	PanelLeft,
+	Pencil,
+	Plus,
+	RefreshCw,
+	Search,
+	Settings,
+	Star,
+	Sun,
+	Telescope,
+	Terminal,
+	Trash2,
+	Type,
+	Undo,
+	Users,
+	Video,
+	X,
+} from "lucide-solid";
 
-export const IconMap: Record<string, Record<string, any>> = {
-	vscode: {
-		Home: Lucide.House,
-		Monitor: Lucide.Monitor,
-		FileText: Lucide.FileText,
-		Download: Lucide.Download,
-		Image: Lucide.Image,
-		HardDrive: Lucide.HardDrive,
-		Folder: Lucide.Folder,
-		File: Lucide.File,
-		Search: Lucide.Search,
-		ChevronLeft: Lucide.ChevronLeft,
-		ChevronRight: Lucide.ChevronRight,
-		List: Lucide.List,
-		Grid: Lucide.LayoutGrid,
-		Settings: Lucide.Settings,
-		FolderPlus: Lucide.FolderPlus,
-		FilePlus: Lucide.FilePlus,
-		Clipboard: Lucide.Clipboard,
-		ExternalLink: Lucide.ExternalLink,
-		Terminal: Lucide.Terminal,
-		Copy: Lucide.Copy,
-		CopyPlus: Lucide.CopyPlus,
-		Pencil: Lucide.Pencil,
-		Package: Lucide.Package,
-		Trash: Lucide.Trash2,
-		Info: Lucide.Info,
-		FileCode: Lucide.FileCode,
-		FileVideo: Lucide.Video,
-		FileAudio: Lucide.AudioLines,
-		FileArchive: Lucide.FileArchive,
-		FileDigit: Lucide.Binary,
-		FileSearch: Lucide.FileSearch,
-		AppWindow: Lucide.AppWindow,
-		Music: Lucide.Music,
-		Film: Lucide.Film,
-		Users: Lucide.Users,
-		Undo: Lucide.Undo,
-		Palette: Lucide.Palette,
-		Sidebar: Lucide.PanelLeft,
-		Type: Lucide.Type,
-		DownloadCloud: Lucide.CloudDownload,
-		Check: Lucide.Check,
-		Sun: Lucide.Sun,
-		Moon: Lucide.Moon,
-		X: Lucide.X,
-	},
+/**
+ * Standard UI Icon Mappings
+ * Maps semantic names used in the app to Lucide component names.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: generic component map
+export const IconMap: Record<string, any> = {
+	// Brand
+	Brand: Telescope,
+
+	// Navigation
+	Home: House,
+	Monitor: Monitor,
+	FileText: FileText,
+	Download: Download,
+	Image: Image,
+	HardDrive: HardDrive,
+	Folder: Folder,
+	File: File,
+	Search: Search,
+	ChevronLeft: ChevronLeft,
+	ChevronRight: ChevronRight,
+	ChevronDown: ChevronDown,
+	ChevronUp: ChevronUp,
+	List: List,
+	Grid: LayoutGrid,
+	Settings: Settings,
+	FolderPlus: FolderPlus,
+	FilePlus: FilePlus,
+	Clipboard: Clipboard,
+	ExternalLink: ExternalLink,
+	Terminal: Terminal,
+	Copy: Copy,
+	CopyPlus: CopyPlus,
+	Pencil: Pencil,
+	Package: Package,
+	Trash: Trash2,
+	Plus: Plus,
+	Info: Info,
+	FileCode: FileCode,
+	FileVideo: Video,
+	FileAudio: AudioLines,
+	FileArchive: FileArchive,
+	FileDigit: Binary,
+	FileSearch: FileSearch,
+	AppWindow: AppWindow,
+	Music: Music,
+	Film: Film,
+	Users: Users,
+	Undo: Undo,
+	Palette: Palette,
+	Sidebar: PanelLeft,
+	Type: Type,
+	DownloadCloud: CloudDownload,
+	Check: Check,
+	Sun: Sun,
+	Moon: Moon,
+	X: X,
+	Star: Star,
+	Eye: Eye,
+	EyeOff: EyeOff,
+	LayoutGrid: LayoutGrid,
+	PanelLeft: PanelLeft,
+	MoreVertical: MoreVertical,
+	MoreHorizontal: MoreHorizontal,
+	RefreshCw: RefreshCw,
 };
 
-// For now, we'll point all packs to Lucide for UI consistency until remote packs are loaded
-IconMap.material = IconMap.vscode;
-IconMap.catppuccin = IconMap.vscode;
-IconMap["catppuccin/mocha"] = IconMap.vscode;
-IconMap["catppuccin/frappe"] = IconMap.vscode;
-IconMap["catppuccin/macchiato"] = IconMap.vscode;
-IconMap["catppuccin/latte"] = IconMap.vscode;
-IconMap.lucide = IconMap.vscode;
+/**
+ * File Extension Mappings (Fallback for when no icon pack is installed)
+ * Maps vscode-icon-resolver names to Lucide icons.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: generic component map
+const ResolverFallbackMap: Record<string, any> = {
+	javascript: FileCode,
+	typescript: FileCode,
+	python: FileCode,
+	rust: FileCode,
+	html: FileCode,
+	css: FileCode,
+	json: FileCode,
+	markdown: FileText,
+	pdf: FileText,
+	image: Image,
+	video: Video,
+	audio: AudioLines,
+	archive: FileArchive,
+	zip: FileArchive,
+	binary: Binary,
+	exe: AppWindow,
+	folder: Folder,
+	folder_open: FolderOpen,
+	folder_images: Image,
+	folder_videos: Video,
+	folder_audio: Music,
+	folder_github: Folder,
+	folder_git: GitBranch,
+};
 
-export type IconPack = keyof typeof IconMap;
+export type IconPack = "lucide" | "vscode" | "material" | string;
 
 export function AppIcon(props: {
 	name: string;
-	pack: string; // Allow any string for sub-variants
+	pack?: string;
 	size?: number;
+	class?: string;
+	style?: unknown;
+	// biome-ignore lint/suspicious/noExplicitAny: needed for rest props spreading
 	[key: string]: any;
 }) {
-	// 1. Try exact pack match
-	let Pack = IconMap[props.pack];
+	// 1. Try semantic mapping
+	let IconComponent = IconMap[props.name];
 
-	// 2. Try base pack match (e.g. 'catppuccin/mocha' -> 'catppuccin')
-	if (!Pack && props.pack.includes("/")) {
-		const base = props.pack.split("/")[0];
-		Pack = IconMap[base];
+	// 2. Try resolver fallback
+	if (!IconComponent) {
+		IconComponent = ResolverFallbackMap[props.name.toLowerCase()];
 	}
 
-	// 3. Fallback to vscode standard UI icons
-	if (!Pack) Pack = IconMap.vscode;
+	// 3. Ultimate fallback
+	if (!IconComponent) {
+		IconComponent = props.name.toLowerCase().includes("folder") ? Folder : File;
+	}
 
-	const IconComponent = Pack[props.name] || Lucide.File;
-	return <IconComponent size={props.size} {...props} />;
+	return (
+		<IconComponent
+			size={props.size}
+			class={props.class}
+			style={props.style}
+			{...props}
+		/>
+	);
 }

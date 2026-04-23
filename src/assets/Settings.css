@@ -26,7 +26,7 @@
 
 /* --- Compact & Elegant Header --- */
 .settings-header-v2 {
-	padding: 20px 48px 0 48px;
+	padding: 16px 40px 0 40px;
 	background: var(--bg-toolbar);
 	backdrop-filter: var(--blur-lg);
 	-webkit-backdrop-filter: var(--blur-lg);
@@ -141,7 +141,7 @@
 	flex: 1;
 	overflow-y: auto;
 	scrollbar-width: none;
-	padding: 32px 48px 80px 48px;
+	padding: 28px 40px 60px 40px;
 	display: flex;
 	justify-content: center;
 }
@@ -246,9 +246,8 @@
 }
 
 .theme-card:hover {
-	border-color: rgba(255, 255, 255, 0.15);
+	border-color: var(--glass-border);
 	background: var(--settings-hover);
-	transform: translateY(-1px);
 }
 
 .theme-card.active {
@@ -328,8 +327,7 @@
 }
 
 .icon-pack-item:hover {
-	border-color: rgba(255, 255, 255, 0.15);
-	transform: translateY(-1px);
+	border-color: var(--glass-border);
 }
 
 .icon-pack-item.active {

@@ -89,7 +89,7 @@ export const FileIcon = (props: {
 		}
 
 		return {
-			name: isFolder ? "Folder" : "File",
+			name: resolvedName,
 			isCustom: false,
 		};
 	});

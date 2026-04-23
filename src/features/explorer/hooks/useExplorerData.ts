@@ -1,6 +1,7 @@
-import { createMemo, createResource, createSignal } from "solid-js";
 import { debounce } from "@solid-primitives/scheduled";
+import { createMemo, createResource, createSignal } from "solid-js";
 import { fileSystem } from "../../../services/apiService";
+import { getFileExtension } from "../../../utils/path";
 import type { SortBy, SortOrder } from "./useExplorerState";
 
 export function useExplorerData(options: {
@@ -14,7 +15,10 @@ export function useExplorerData(options: {
 }) {
 	// Debounced search query — waits 300ms after user stops typing
 	const [debouncedQuery, setDebouncedQuery] = createSignal("");
-	const updateDebouncedQuery = debounce((q: string) => setDebouncedQuery(q), 300);
+	const updateDebouncedQuery = debounce(
+		(q: string) => setDebouncedQuery(q),
+		300,
+	);
 
 	// Track the raw query and update debounced version
 	createMemo(() => {
@@ -37,16 +41,13 @@ export function useExplorerData(options: {
 			if (!path) return [];
 			const results = await fileSystem.listDirectory(path, showHidden);
 			return results.map((r) => ({
-        id: r.path,
-        name: r.name,
-        type: r.is_dir ? "folder" : "file",
-        size: r.size,
-        updatedAt: new Date(r.updated_at * 1000).toISOString(),
-        ext:
-          r.name.indexOf(".") != -1  && r.name.indexOf(".") > r.name.length - 6
-            ? r.name.split(".").pop()
-            : "--",
-      }));
+				id: r.path,
+				name: r.name,
+				type: r.is_dir ? "folder" : "file",
+				size: r.size,
+				updatedAt: new Date(r.updated_at * 1000).toISOString(),
+				ext: getFileExtension(r.name) || "--",
+			}));
 		},
 	);
 
@@ -61,7 +62,7 @@ export function useExplorerData(options: {
 				type: r.is_dir ? "folder" : "file",
 				size: r.size,
 				updatedAt: new Date(r.updated_at * 1000).toISOString(),
-				ext: r.name.includes(".") ? r.name.split(".").pop() : undefined,
+				ext: getFileExtension(r.name) || "--",
 			}));
 		},
 	);

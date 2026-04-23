@@ -3,8 +3,8 @@ mod menu;
 mod watcher;
 
 use commands::downloader::{
-    download_icons, download_resource, delete_icon_pack, delete_resource, 
-    get_installed_packs, get_installed_fonts, list_resources, get_base_icons_path
+    delete_icon_pack, delete_resource, download_icons, download_resource, get_base_icons_path,
+    get_installed_fonts, get_installed_packs, list_resources,
 };
 
 use crate::commands::size;
@@ -40,10 +40,13 @@ pub fn run() {
             commands::fs::rename_item,
             commands::fs::create_directory,
             commands::fs::create_file,
+            commands::fs::read_file_content,
+            commands::fs::write_file_content,
             commands::fs::copy_items,
             commands::fs::move_items,
             commands::fs::duplicate_items,
             commands::fs::open_in_terminal,
+            commands::preview::read_file_preview,
             download_icons,
             download_resource,
             delete_icon_pack,

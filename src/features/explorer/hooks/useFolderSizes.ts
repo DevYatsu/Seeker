@@ -1,4 +1,4 @@
-import { createSignal, onCleanup } from "solid-js";
+import { createSignal } from "solid-js";
 import { fileSystem } from "../../../services/apiService";
 
 /**

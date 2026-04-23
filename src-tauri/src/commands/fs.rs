@@ -239,6 +239,18 @@ pub fn create_file(parent_path: String, name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn read_file_content(path: String) -> Result<String, String> {
+    validate_path(&path)?;
+    std::fs::read_to_string(path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn write_file_content(path: String, content: String) -> Result<(), String> {
+    validate_path(&path)?;
+    std::fs::write(path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn copy_items(sources: Vec<String>, target_dir: String) -> Result<(), String> {
     sources.into_par_iter().try_for_each(|source| {
         let source_path = Path::new(&source);
@@ -261,7 +273,7 @@ pub fn move_items(sources: Vec<String>, target_dir: String) -> Result<(), String
         let source_path = Path::new(&source);
         let name = source_path.file_name().ok_or("Invalid source name")?;
         let target_path = Path::new(&target_dir).join(name);
-        
+
         // Prevent moving a directory into itself or its children
         if target_path.starts_with(source_path) {
             return Err("Cannot move a directory into itself".into());
@@ -311,13 +323,14 @@ pub fn open_in_terminal(path: String) -> Result<(), String> {
         // Use common terminal emulators instead of EDITOR for clarity
         let terminals = ["gnome-terminal", "konsole", "xfce4-terminal", "xterm"];
         let mut launched = false;
-        
+
         for term in terminals {
             if Command::new(term)
                 .arg("--working-directory")
                 .arg(dir)
                 .status()
-                .is_ok() {
+                .is_ok()
+            {
                 launched = true;
                 break;
             }

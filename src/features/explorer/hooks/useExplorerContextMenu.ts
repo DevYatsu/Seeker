@@ -29,6 +29,7 @@ interface ContextMenuOptions {
 		) => void;
 		openInTerminal: (path: string) => void;
 		refresh: () => void;
+		addFavorite: (path: string, label: string) => void;
 	};
 }
 
@@ -172,6 +173,22 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 				},
 				separator: true,
 			},
+			...(opts.data.displayedFiles().find((f) => f.id === firstId)?.type ===
+			"folder"
+				? [
+						{
+							label: "Add to Favorites",
+							icon: "Star",
+							action: () => {
+								const item = opts.data
+									.displayedFiles()
+									.find((f) => f.id === firstId);
+								if (item) opts.handlers.addFavorite(item.id, item.name);
+							},
+							separator: true,
+						},
+					]
+				: []),
 		];
 	});
 }

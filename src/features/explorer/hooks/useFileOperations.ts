@@ -12,7 +12,9 @@ interface FileOpContext {
 
 export function useFileOperations(ctx: FileOpContext) {
 	const [clipboard, setClipboard] = createSignal<string[]>([]);
-	const [clipboardMode, setClipboardMode] = createSignal<"copy" | "cut">("copy");
+	const [clipboardMode, setClipboardMode] = createSignal<"copy" | "cut">(
+		"copy",
+	);
 
 	const handleCopy = (ids: string[]) => {
 		if (ids.length > 0) {

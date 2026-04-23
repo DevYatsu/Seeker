@@ -23,13 +23,10 @@ export function useExplorerState() {
 		},
 	);
 
-	const [sortBy, setSortBy] = makePersisted(
-		createSignal<SortBy>("name"),
-		{
-			...storageOptions,
-			name: "seeker-sort-by",
-		},
-	);
+	const [sortBy, setSortBy] = makePersisted(createSignal<SortBy>("name"), {
+		...storageOptions,
+		name: "seeker-sort-by",
+	});
 	const [sortOrder, setSortOrder] = makePersisted(
 		createSignal<SortOrder>("asc"),
 		{
@@ -45,13 +42,10 @@ export function useExplorerState() {
 		},
 	);
 
-	const [showHidden, setShowHidden] = makePersisted(
-		createSignal(false),
-		{
-			...storageOptions,
-			name: "seeker-show-hidden",
-		},
-	);
+	const [showHidden, setShowHidden] = makePersisted(createSignal(false), {
+		...storageOptions,
+		name: "seeker-show-hidden",
+	});
 
 	const [searchQuery, setSearchQuery] = createSignal("");
 	const [refreshTrigger, setRefreshTrigger] = createSignal(0);

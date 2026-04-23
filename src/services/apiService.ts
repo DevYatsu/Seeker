@@ -14,10 +14,21 @@ export interface NavigationLocation {
 	label: string;
 }
 
+export interface DiskInfo {
+	name: string;
+	mount_point: string;
+	file_system: string;
+	total_space: number;
+	available_space: number;
+	is_removable: boolean;
+	is_read_only: boolean;
+	disk_kind: string;
+}
+
 export interface StorageStats {
 	total_free_bytes: number;
 	total_bytes: number;
-	disks: any[];
+	disks: DiskInfo[];
 }
 
 /**
@@ -39,6 +50,9 @@ export interface IFileSystemService {
 	duplicateItems(paths: string[]): Promise<void>;
 	openInTerminal(path: string): Promise<void>;
 	calculateDirSize(path: string): Promise<number>;
+	readFilePreview(path: string, maxBytes?: number): Promise<string>;
+	readFileContent(path: string): Promise<string>;
+	writeFileContent(path: string, content: string): Promise<void>;
 }
 
 /**
@@ -107,6 +121,15 @@ export class TauriFileSystemService implements IFileSystemService {
 	}
 	async calculateDirSize(path: string) {
 		return invoke<number>("calculate_dir_size", { path });
+	}
+	async readFilePreview(path: string, maxBytes?: number) {
+		return invoke<string>("read_file_preview", { path, maxBytes });
+	}
+	async readFileContent(path: string) {
+		return invoke<string>("read_file_content", { path });
+	}
+	async writeFileContent(path: string, content: string) {
+		return invoke<void>("write_file_content", { path, content });
 	}
 }
 

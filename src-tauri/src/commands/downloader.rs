@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, AppHandle};
-use tokio::sync::Semaphore;
-use std::path::PathBuf;
-use std::sync::Arc;
 use futures::future::{join_all, BoxFuture};
 use futures::FutureExt;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::Semaphore;
 
 // --- Constants ---
 const MAX_CONCURRENT_DOWNLOADS: usize = 25;
@@ -89,7 +89,10 @@ impl Downloader {
         );
 
         let response = self.fetch_with_retry(&api_url).await?;
-        response.json::<Vec<GitHubItem>>().await.map_err(DownloadError::Network)
+        response
+            .json::<Vec<GitHubItem>>()
+            .await
+            .map_err(DownloadError::Network)
     }
 
     async fn fetch_with_retry(&self, url: &str) -> Result<reqwest::Response, DownloadError> {
@@ -101,8 +104,9 @@ impl Downloader {
                 Ok(res) if res.status().is_success() => return Ok(res),
                 Ok(res) => {
                     let status = res.status();
-                    let should_retry = status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
-                    
+                    let should_retry = status.is_server_error()
+                        || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
+
                     if retries_left > 0 && should_retry {
                         retries_left -= 1;
                         tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
@@ -122,20 +126,22 @@ impl Downloader {
     }
 
     pub async fn download_file(&self, url: &str, dest: PathBuf) -> Result<(), DownloadError> {
-        let _permit = self.semaphore.acquire().await.map_err(|e| DownloadError::Internal(e.to_string()))?;
-        
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|e| DownloadError::Internal(e.to_string()))?;
+
         let response = self.fetch_with_retry(url).await?;
         let bytes = response.bytes().await.map_err(DownloadError::Network)?;
-        
+
         if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                DownloadError::Io(e, parent.display().to_string())
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| DownloadError::Io(e, parent.display().to_string()))?;
         }
 
-        std::fs::write(&dest, bytes).map_err(|e| {
-            DownloadError::Io(e, dest.display().to_string())
-        })?;
+        std::fs::write(&dest, bytes)
+            .map_err(|e| DownloadError::Io(e, dest.display().to_string()))?;
 
         Ok(())
     }
@@ -151,7 +157,8 @@ impl Downloader {
     ) -> BoxFuture<'static, Result<(), String>> {
         let this = Arc::clone(&self);
         async move {
-            let items = this.fetch_directory_contents(&owner, &repo, &path, &branch)
+            let items = this
+                .fetch_directory_contents(&owner, &repo, &path, &branch)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -168,7 +175,8 @@ impl Downloader {
                 if item.item_type == "dir" {
                     let sub_target = target_root.join(&item.name);
                     tasks.push(tokio::spawn(async move {
-                        this.download_recursive(pack_id, owner, repo, item.path, branch, sub_target).await
+                        this.download_recursive(pack_id, owner, repo, item.path, branch, sub_target)
+                            .await
                     }));
                 } else if item.item_type == "file" && item.name.ends_with(".svg") {
                     if let Some(url) = item.download_url {
@@ -177,14 +185,20 @@ impl Downloader {
                         tasks.push(tokio::spawn(async move {
                             match this.download_file(&url, dest).await {
                                 Ok(_) => {
-                                    let current = this.download_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                                    let _ = this.app_handle.emit("download-progress", DownloadProgress {
-                                        pack_id,
-                                        total_files: 0,
-                                        downloaded: current,
-                                        current_file: item_name,
-                                        status: "downloading".to_string(),
-                                    });
+                                    let current = this
+                                        .download_count
+                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                                        + 1;
+                                    let _ = this.app_handle.emit(
+                                        "download-progress",
+                                        DownloadProgress {
+                                            pack_id,
+                                            total_files: 0,
+                                            downloaded: current,
+                                            current_file: item_name,
+                                            status: "downloading".to_string(),
+                                        },
+                                    );
                                     Ok(())
                                 }
                                 Err(e) => Err(e.to_string()),
@@ -204,14 +218,16 @@ impl Downloader {
             }
 
             Ok(())
-        }.boxed()
+        }
+        .boxed()
     }
 }
 
 // --- Resource Management Helpers ---
 
 fn get_resources_root(handle: &tauri::AppHandle) -> Result<PathBuf, String> {
-    handle.path()
+    handle
+        .path()
         .app_local_data_dir()
         .map(|p| p.join("resources"))
         .map_err(|_| "Could not determine app data directory".to_string())
@@ -221,7 +237,8 @@ fn get_subfolder_path(handle: &tauri::AppHandle, subfolder: &str) -> Result<Path
     let root = get_resources_root(handle)?;
     let path = root.join(subfolder);
     if !path.exists() {
-        std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create subfolder {}: {}", subfolder, e))?;
+        std::fs::create_dir_all(&path)
+            .map_err(|e| format!("Failed to create subfolder {}: {}", subfolder, e))?;
     }
     Ok(path)
 }
@@ -229,21 +246,21 @@ fn get_subfolder_path(handle: &tauri::AppHandle, subfolder: &str) -> Result<Path
 // --- Tauri Commands ---
 
 #[::tauri::command]
-pub async fn download_icons(
-    handle: tauri::AppHandle,
-    folder_path: String,
-) -> Result<(), String> {
+pub async fn download_icons(handle: tauri::AppHandle, folder_path: String) -> Result<(), String> {
     let downloader = Arc::new(Downloader::new(handle.clone())?);
     let target_dir = get_subfolder_path(&handle, "icons")?.join(folder_path.replace("/", "_"));
 
-    downloader.clone().download_recursive(
-        folder_path.clone().into(),
-        "DevYatsu".into(),
-        "icons".into(),
-        folder_path,
-        "master".into(),
-        target_dir,
-    ).await?;
+    downloader
+        .clone()
+        .download_recursive(
+            folder_path.clone().into(),
+            "DevYatsu".into(),
+            "icons".into(),
+            folder_path,
+            "master".into(),
+            target_dir,
+        )
+        .await?;
 
     Ok(())
 }
@@ -258,7 +275,10 @@ pub async fn download_resource(
     let downloader = Arc::new(Downloader::new(handle.clone())?);
     let target_path = get_subfolder_path(&handle, &resource_type)?.join(filename);
 
-    downloader.download_file(&url, target_path).await.map_err(|e| e.to_string())?;
+    downloader
+        .download_file(&url, target_path)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -273,10 +293,12 @@ pub async fn delete_resource(
 
     if path.exists() {
         if path.is_dir() {
-            tokio::fs::remove_dir_all(path).await
+            tokio::fs::remove_dir_all(path)
+                .await
                 .map_err(|e| format!("Failed to delete directory: {}", e))?;
         } else {
-            tokio::fs::remove_file(path).await
+            tokio::fs::remove_file(path)
+                .await
                 .map_err(|e| format!("Failed to delete file: {}", e))?;
         }
     }

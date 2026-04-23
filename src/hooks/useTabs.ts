@@ -1,4 +1,5 @@
-import { batch, createEffect, createMemo, createSignal } from "solid-js";
+import { makePersisted } from "@solid-primitives/storage";
+import { batch, createMemo, createSignal } from "solid-js";
 
 const STORAGE_KEY = "seeker-nav-tabs";
 
@@ -8,60 +9,35 @@ export interface TabHistory {
 	index: number;
 }
 
-interface PersistedTabs {
-	tabs: TabHistory[];
-	activeIndex: number;
-}
-
 function generateTabId() {
 	return Math.random().toString(36).substring(2, 9);
 }
 
-function loadPersistedTabs(fallback: string): PersistedTabs {
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (raw) {
-			const data = JSON.parse(raw) as PersistedTabs;
-			if (
-				Array.isArray(data.tabs) &&
-				data.tabs.length > 0 &&
-				typeof data.activeIndex === "number" &&
-				data.activeIndex >= 0 &&
-				data.activeIndex < data.tabs.length
-			) {
-				return data;
-			}
-		}
-	} catch {
-		// Corrupted data, fall through
-	}
-	return {
-		tabs: [{ id: generateTabId(), history: [fallback], index: 0 }],
-		activeIndex: 0,
-	};
-}
-
 export function useTabs(initialPath: string = "home") {
-	const persisted = loadPersistedTabs(initialPath);
+	const [tabs, setTabs] = makePersisted(
+		createSignal<TabHistory[]>([
+			{ id: generateTabId(), history: [initialPath], index: 0 },
+		]),
+		{ name: STORAGE_KEY },
+	);
 
-	const [tabs, setTabs] = createSignal<TabHistory[]>(persisted.tabs);
-	const [activeTabIndex, setActiveTabIndex] = createSignal(persisted.activeIndex);
+	const [activeTabIndex, setActiveTabIndex] = makePersisted(createSignal(0), {
+		name: `${STORAGE_KEY}-index`,
+	});
 
-	const activeTab = createMemo(() => tabs()[activeTabIndex()]);
+	const activeTab = createMemo(() => {
+		const currentTabs = tabs();
+		const index = activeTabIndex();
+		// Safety check for persisted state
+		return currentTabs[index] || currentTabs[0];
+	});
 
 	const currentPath = createMemo(() => activeTab().history[activeTab().index]);
 
 	const canGoBack = createMemo(() => activeTab().index > 0);
-	const canGoForward = createMemo(() => activeTab().index < activeTab().history.length - 1);
-
-	// Persist to localStorage whenever tabs or index changes
-	createEffect(() => {
-		const data: PersistedTabs = {
-			tabs: tabs(),
-			activeIndex: activeTabIndex(),
-		};
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-	});
+	const canGoForward = createMemo(
+		() => activeTab().index < activeTab().history.length - 1,
+	);
 
 	const push = (path: string) => {
 		if (path === currentPath()) return;
@@ -105,7 +81,10 @@ export function useTabs(initialPath: string = "home") {
 
 	const addTab = (path: string = currentPath()) => {
 		batch(() => {
-			setTabs((prev) => [...prev, { id: generateTabId(), history: [path], index: 0 }]);
+			setTabs((prev) => [
+				...prev,
+				{ id: generateTabId(), history: [path], index: 0 },
+			]);
 			setActiveTabIndex(tabs().length - 1);
 		});
 	};
