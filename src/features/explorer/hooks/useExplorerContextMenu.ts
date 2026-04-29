@@ -1,24 +1,23 @@
 import { createMemo } from "solid-js";
 import type { ContextMenuItem } from "../../../components/ContextMenu";
-import type { FileItem } from "../../../utils/mockData";
 
 interface ContextMenuOptions {
 	selection: { selectedIds: () => string[] };
 	ops: {
 		clipboard: () => string[];
-		handleCopy: (ids: string[]) => void;
-		handlePaste: () => void;
-		handleDelete: (ids: string[], isTrash: boolean) => void;
-		handleRename: (id: string, name: string) => void;
-		handleDuplicate: (ids: string[]) => void;
-		handleCreateFolder: (name: string) => void;
-		handleCreateFile: (name: string) => void;
+		execute: (op: import("../modules/FileSystemManager").FileOperation) => Promise<void>;
+		copy: (ids: string[]) => void;
+		paste: (targetPath: string) => Promise<void>;
 	};
 	nav: {
 		isTrash: () => boolean;
 		currentAbsolutePath: () => string;
 	};
-	data: { displayedFiles: () => FileItem[] };
+	resources: {
+		items: () => import("../../../utils/mockData").FileItem[];
+		execute?: never; // for type safety
+		refresh: () => void;
+	};
 	handlers: {
 		onOpen: (id: string) => void;
 		setPromptConfig: (
@@ -28,7 +27,6 @@ interface ContextMenuOptions {
 			config: import("../components/ExplorerModals").InfoModal | null,
 		) => void;
 		openInTerminal: (path: string) => void;
-		refresh: () => void;
 		addFavorite: (path: string, label: string) => void;
 	};
 }
@@ -46,7 +44,7 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 					{
 						label: "Empty Trash",
 						icon: "Trash",
-						action: opts.handlers.refresh,
+						action: opts.resources.refresh,
 						danger: true,
 					},
 				];
@@ -58,7 +56,12 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 					action: () =>
 						opts.handlers.setPromptConfig({
 							title: "New Folder Name",
-							onSubmit: opts.ops.handleCreateFolder,
+							onSubmit: (name) =>
+								opts.ops.execute({
+									type: "createFolder",
+									parentPath: root,
+									name,
+								}),
 						}),
 				},
 				{
@@ -67,7 +70,12 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 					action: () =>
 						opts.handlers.setPromptConfig({
 							title: "New File Name",
-							onSubmit: opts.ops.handleCreateFile,
+							onSubmit: (name) =>
+								opts.ops.execute({
+									type: "createFile",
+									parentPath: root,
+									name,
+								}),
 						}),
 				},
 				{
@@ -75,7 +83,7 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 						? `Paste ${opts.ops.clipboard().length} Items`
 						: "Paste",
 					icon: "Clipboard",
-					action: opts.ops.handlePaste,
+					action: () => opts.ops.paste(root),
 					disabled: !hasClipboard,
 					separator: true,
 				},
@@ -102,7 +110,11 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 					label: "Delete Permanently",
 					icon: "Trash",
 					action: () =>
-						opts.ops.handleDelete(opts.selection.selectedIds(), true),
+						opts.ops.execute({
+							type: "delete",
+							ids: opts.selection.selectedIds(),
+							permanent: true,
+						}),
 					danger: true,
 					separator: true,
 				},
@@ -110,8 +122,8 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 					label: "Get Info",
 					icon: "Info",
 					action: () => {
-						const item = opts.data
-							.displayedFiles()
+						const item = opts.resources
+							.items()
 							.find((f) => f.id === firstId);
 						if (item) opts.handlers.setInfoModal({ file: item });
 					},
@@ -134,24 +146,33 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 			{
 				label: "Copy",
 				icon: "Copy",
-				action: () => opts.ops.handleCopy(opts.selection.selectedIds()),
+				action: () => opts.ops.copy(opts.selection.selectedIds()),
 				separator: true,
 			},
 			{
 				label: "Duplicate",
 				icon: "CopyPlus",
-				action: () => opts.ops.handleDuplicate(opts.selection.selectedIds()),
+				action: () =>
+					opts.ops.execute({
+						type: "duplicate",
+						ids: opts.selection.selectedIds(),
+					}),
 			},
 			{
 				label: "Rename",
 				icon: "Pencil",
 				action: () => {
-					const item = opts.data.displayedFiles().find((f) => f.id === firstId);
+					const item = opts.resources.items().find((f) => f.id === firstId);
 					opts.handlers.setPromptConfig({
 						title: "Rename Item",
 						defaultValue: item?.name,
 						onSubmit: (newName: string) =>
-							opts.ops.handleRename(firstId, newName),
+							opts.ops.execute({
+								type: "rename",
+								id: firstId,
+								newName,
+								oldName: item?.name,
+							}),
 					});
 				},
 				separator: true,
@@ -160,7 +181,12 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 				label: "Move to Trash",
 				icon: "Trash",
 				action: () =>
-					opts.ops.handleDelete(opts.selection.selectedIds(), false),
+					opts.ops.execute({
+						type: "delete",
+						ids: opts.selection.selectedIds(),
+						permanent: false,
+						sourceDirId: root,
+					}),
 				danger: true,
 				separator: true,
 			},
@@ -168,20 +194,20 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 				label: "Get Info",
 				icon: "Info",
 				action: () => {
-					const item = opts.data.displayedFiles().find((f) => f.id === firstId);
+					const item = opts.resources.items().find((f) => f.id === firstId);
 					if (item) opts.handlers.setInfoModal({ file: item });
 				},
 				separator: true,
 			},
-			...(opts.data.displayedFiles().find((f) => f.id === firstId)?.type ===
+			...(opts.resources.items().find((f) => f.id === firstId)?.type ===
 			"folder"
 				? [
 						{
 							label: "Add to Favorites",
 							icon: "Star",
 							action: () => {
-								const item = opts.data
-									.displayedFiles()
+								const item = opts.resources
+									.items()
 									.find((f) => f.id === firstId);
 								if (item) opts.handlers.addFavorite(item.id, item.name);
 							},

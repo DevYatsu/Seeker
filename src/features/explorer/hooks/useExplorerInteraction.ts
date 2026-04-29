@@ -4,10 +4,7 @@ interface InteractionOptions {
 	selection: {
 		selectedIds: () => string[];
 		setSelectedIds: (ids: string[]) => void;
-		selectItem: (
-			id: string,
-			options: { multi: boolean; range: boolean },
-		) => void;
+		handleInteraction: (event: InteractionEvent) => void;
 	};
 	contextMenu: {
 		open: (e: MouseEvent) => void;
@@ -31,10 +28,7 @@ export function useExplorerInteraction(opts: InteractionOptions) {
 				opts.selection.setSelectedIds([event.id]);
 			}
 		} else {
-			opts.selection.selectItem(event.id, {
-				multi: event.multi,
-				range: event.range,
-			});
+			opts.selection.handleInteraction(event);
 		}
 	};
 

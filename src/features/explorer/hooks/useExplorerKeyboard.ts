@@ -4,35 +4,39 @@ interface KeyboardOptions {
 	selection: {
 		selectedIds: () => string[];
 		selectAll: () => void;
-		clearSelection: () => void;
-		selectByDelta: (delta: number, extend: boolean) => void;
+		clear: () => void;
+		handleNavigation: (
+			direction: "up" | "down" | "left" | "right",
+			options: { extend: boolean },
+		) => void;
 	};
 	ops: {
-		handleCopy: (ids: string[]) => void;
-		handleCut: (ids: string[]) => void;
-		handlePaste: () => void;
-		handleDelete: (ids: string[], isTrash: boolean) => void;
+		execute: (op: import("../modules/FileSystemManager").FileOperation) => Promise<void>;
+		copy: (ids: string[]) => void;
+		cut: (ids: string[]) => void;
+		paste: (targetPath: string) => Promise<void>;
 	};
 	nav: {
-		history: {
-			canGoBack: boolean;
-			goBack: () => void;
-			addTab: () => void;
-			closeTab: (index: number) => void;
-			activeTabIndex: () => number;
-		};
+		currentAbsolutePath: () => string;
+		canGoBack: () => boolean;
+		goBack: () => void;
+		addTab: () => void;
+		closeTab: (index: number) => void;
+		activeTabIndex: () => number;
 		isTrash: () => boolean;
 	};
-	state: {
-		viewMode: () => "grid" | "list";
+	resources: {
 		setSearchQuery: (q: string) => void;
+	};
+	undo: {
+		undo: () => Promise<void>;
+		redo: () => Promise<void>;
 	};
 	handlers: {
 		handleOpen: (id: string) => void;
 		setQuickLookFileId: (id: string | null) => void;
 		quickLookFileId: () => string | null;
 	};
-	getGridColumns: () => number;
 }
 
 export function useExplorerKeyboard(opts: KeyboardOptions) {
@@ -52,13 +56,13 @@ export function useExplorerKeyboard(opts: KeyboardOptions) {
 		if (cmdOrCtrl) {
 			switch (key.toLowerCase()) {
 				case "c":
-					opts.ops.handleCopy(opts.selection.selectedIds());
+					opts.ops.copy(opts.selection.selectedIds());
 					return;
 				case "x":
-					opts.ops.handleCut(opts.selection.selectedIds());
+					opts.ops.cut(opts.selection.selectedIds());
 					return;
 				case "v":
-					opts.ops.handlePaste();
+					opts.ops.paste(opts.nav.currentAbsolutePath());
 					return;
 				case "a":
 					e.preventDefault();
@@ -72,29 +76,42 @@ export function useExplorerKeyboard(opts: KeyboardOptions) {
 					return;
 				case "t":
 					e.preventDefault();
-					opts.nav.history.addTab();
+					opts.nav.addTab();
 					return;
 				case "w":
 					e.preventDefault();
-					opts.nav.history.closeTab(opts.nav.history.activeTabIndex());
+					opts.nav.closeTab(opts.nav.activeTabIndex());
+					return;
+				case "z":
+					e.preventDefault();
+					if (e.shiftKey) {
+						opts.undo.redo();
+					} else {
+						opts.undo.undo();
+					}
 					return;
 			}
 		}
 
 		// --- Arrow key navigation ---
-		if (["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(key)) {
+		if (key === "ArrowDown") {
 			e.preventDefault();
-			const isGrid = opts.state.viewMode() === "grid";
-
-			let delta = 0;
-			if (key === "ArrowDown") delta = isGrid ? opts.getGridColumns() : 1;
-			if (key === "ArrowUp") delta = isGrid ? -opts.getGridColumns() : -1;
-			if (key === "ArrowRight") delta = isGrid ? 1 : 0;
-			if (key === "ArrowLeft") delta = isGrid ? -1 : 0;
-
-			if (delta !== 0) {
-				opts.selection.selectByDelta(delta, e.shiftKey);
-			}
+			opts.selection.handleNavigation("down", { extend: e.shiftKey });
+			return;
+		}
+		if (key === "ArrowUp") {
+			e.preventDefault();
+			opts.selection.handleNavigation("up", { extend: e.shiftKey });
+			return;
+		}
+		if (key === "ArrowRight") {
+			e.preventDefault();
+			opts.selection.handleNavigation("right", { extend: e.shiftKey });
+			return;
+		}
+		if (key === "ArrowLeft") {
+			e.preventDefault();
+			opts.selection.handleNavigation("left", { extend: e.shiftKey });
 			return;
 		}
 
@@ -127,8 +144,8 @@ export function useExplorerKeyboard(opts: KeyboardOptions) {
 			if (opts.handlers.quickLookFileId()) {
 				opts.handlers.setQuickLookFileId(null);
 			} else {
-				opts.selection.clearSelection();
-				opts.state.setSearchQuery("");
+				opts.selection.clear();
+				opts.resources.setSearchQuery("");
 			}
 			return;
 		}
@@ -136,9 +153,13 @@ export function useExplorerKeyboard(opts: KeyboardOptions) {
 		// --- Backspace/Delete ---
 		if (key === "Backspace" || key === "Delete") {
 			if (opts.selection.selectedIds().length > 0) {
-				opts.ops.handleDelete(opts.selection.selectedIds(), opts.nav.isTrash());
-			} else if (key === "Backspace" && opts.nav.history.canGoBack) {
-				opts.nav.history.goBack();
+				opts.ops.execute({
+					type: "delete",
+					ids: opts.selection.selectedIds(),
+					permanent: opts.nav.isTrash(),
+				});
+			} else if (key === "Backspace" && opts.nav.canGoBack()) {
+				opts.nav.goBack();
 			}
 			return;
 		}

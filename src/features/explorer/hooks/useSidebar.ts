@@ -1,3 +1,4 @@
+import { useExplorer } from "../context/ExplorerContext";
 import { useSettings } from "../../../hooks/useSettings";
 import type { NavigationLocation } from "../../../services/apiService";
 
@@ -5,7 +6,6 @@ interface SidebarOptions {
 	activeLocation: string;
 	setActiveLocation: (id: string) => void;
 	locations: NavigationLocation[];
-	onMove?: (sourceIds: string[], targetId: string) => void;
 }
 
 /**
@@ -13,6 +13,7 @@ interface SidebarOptions {
  * Extracts state and handlers to keep UI component focused on rendering.
  */
 export function useSidebar(opts: SidebarOptions) {
+	const { dnd } = useExplorer();
 	const { iconPack, visibleNavIds, favoritePaths, removeFavorite } =
 		useSettings();
 
@@ -29,21 +30,12 @@ export function useSidebar(opts: SidebarOptions) {
 		(e.currentTarget as HTMLElement).classList.remove("drag-over");
 	};
 
-	const onDrop = (e: DragEvent, targetPath: string) => {
+	const onDrop = async (e: DragEvent, targetPath: string) => {
 		e.preventDefault();
 		(e.currentTarget as HTMLElement).classList.remove("drag-over");
 
-		const data = e.dataTransfer?.getData("application/json");
-		if (data && opts.onMove) {
-			try {
-				const sourceIds = JSON.parse(data) as string[];
-				if (sourceIds.length > 0) {
-					opts.onMove(sourceIds, targetPath);
-				}
-			} catch (err) {
-				console.error("Failed to parse drop data", err);
-			}
-		}
+		const data = e.dataTransfer?.getData("application/json") || undefined;
+		await dnd.handleDrop(targetPath, data);
 	};
 
 	return {

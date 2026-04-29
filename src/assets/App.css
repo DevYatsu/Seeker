@@ -997,6 +997,110 @@ html {
 	justify-content: flex-start;
 	padding: 14px 8px 10px;
 	border-radius: var(--radius-md);
+/* --- Task Drawer --- */
+.task-drawer {
+	position: fixed;
+	bottom: 40px;
+	right: 20px;
+	width: 280px;
+	background: rgba(var(--bg-secondary-rgb), 0.8);
+	backdrop-filter: blur(16px);
+	border: 1px solid rgba(var(--border-color-rgb), 0.5);
+	border-radius: 12px;
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+	z-index: 1000;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+.task-drawer-header {
+	padding: 10px 14px;
+	background: rgba(var(--accent-rgb), 0.1);
+	border-bottom: 1px solid rgba(var(--border-color-rgb), 0.3);
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-secondary);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.task-count {
+	margin-left: auto;
+	background: var(--accent);
+	color: white;
+	padding: 1px 6px;
+	border-radius: 10px;
+	font-size: 10px;
+}
+
+.task-list {
+	max-height: 300px;
+	overflow-y: auto;
+}
+
+.task-item {
+	padding: 12px 14px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	border-bottom: 1px solid rgba(var(--border-color-rgb), 0.2);
+}
+
+.task-item:last-child { border-bottom: none; }
+
+.task-info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.task-name {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-primary);
+}
+
+.task-status {
+	font-size: 11px;
+	color: var(--text-secondary);
+}
+
+.task-item.error .task-name { color: #ff4d4d; }
+.task-item.error .task-status { color: #ff4d4d; opacity: 0.8; }
+
+.mini-spinner {
+	width: 14px;
+	height: 14px;
+	border: 2px solid rgba(var(--accent-rgb), 0.2);
+	border-top-color: var(--accent);
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+	to { transform: rotate(360deg); }
+}
+
+.animate-in-up {
+	animation: slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInUp {
+	from { transform: translateY(20px); opacity: 0; }
+	to { transform: translateY(0); opacity: 1; }
+}
+
+/* --- Breadcrumb Drop Feedback --- */
+.crum-segment.is-over {
+	background: rgba(var(--accent-rgb), 0.2) !important;
+	color: var(--accent) !important;
+	border-radius: 4px;
+	box-shadow: 0 0 0 2px var(--accent);
+}
 	border: 1px solid transparent;
 	cursor: default;
 	transition: all var(--transition-fast);

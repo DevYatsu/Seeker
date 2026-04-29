@@ -1,6 +1,6 @@
 import { For } from "solid-js";
 import { AppIcon, type IconPack } from "../../../components/AppIcon";
-import type { TabHistory } from "../../../hooks/useTabs";
+import type { TabHistory } from "../modules/NavigationManager";
 import { useTabBar } from "../hooks/useTabBar";
 
 type TabBarProps = {

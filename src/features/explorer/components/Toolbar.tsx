@@ -1,6 +1,7 @@
-import { For } from "solid-js";
+import { createSignal, For } from "solid-js";
 import { AppIcon, type IconPack } from "../../../components/AppIcon";
 import { useToolbar } from "../hooks/useToolbar";
+import { useExplorer } from "../context/ExplorerContext";
 
 type ToolbarProps = {
 	activeLocation: string;
@@ -27,6 +28,7 @@ type ToolbarProps = {
 };
 
 export default function Toolbar(props: ToolbarProps) {
+	const { dnd } = useExplorer();
 	const {
 		breadcrumbs,
 		toggleSortOrder,
@@ -55,19 +57,33 @@ export default function Toolbar(props: ToolbarProps) {
 				</button>
 				<nav class="breadcrumb" aria-label="Path">
 					<For each={breadcrumbs()}>
-						{(segment, i) => (
-							<>
-								{i() > 0 && <span class="crum-separator">/</span>}
-								<button
-									type="button"
-									class={`crum-segment ${i() === breadcrumbs().length - 1 ? "bold" : ""}`}
-									onClick={() => props.onNavigate(segment.path)}
-									title={segment.path}
-								>
-									{segment.name}
-								</button>
-							</>
-						)}
+						{(segment, i) => {
+							const [isOver, setIsOver] = createSignal(false);
+							return (
+								<>
+									{i() > 0 && <span class="crum-separator">/</span>}
+									<button
+										type="button"
+										class={`crum-segment ${i() === breadcrumbs().length - 1 ? "bold" : ""} ${isOver() ? "is-over" : ""}`}
+										onClick={() => props.onNavigate(segment.path)}
+										onDragOver={(e) => {
+											e.preventDefault();
+											setIsOver(true);
+										}}
+										onDragLeave={() => setIsOver(false)}
+										onDrop={async (e) => {
+											e.preventDefault();
+											setIsOver(false);
+											const data = e.dataTransfer?.getData("application/json") || undefined;
+											await dnd.handleDrop(segment.path, data);
+										}}
+										title={segment.path}
+									>
+										{segment.name}
+									</button>
+								</>
+							);
+						}}
 					</For>
 				</nav>
 			</div>

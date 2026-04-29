@@ -1,25 +1,30 @@
 import { createContext, type JSX, useContext } from "solid-js";
-import type { IconPack } from "../../components/AppIcon";
+
+/**
+ * Context to avoid prop-drilling across the complex Explorer feature.
+ * Adheres to SoC and DRY by providing common state and handlers to sub-components.
+ */
+import type { createSelectionManager } from "../modules/SelectionManager";
+import type { createFileSystemManager } from "../modules/FileSystemManager";
+import type { createNavigationManager } from "../modules/NavigationManager";
+import type { createResourceManager } from "../modules/ResourceManager";
+import type { createUndoManager } from "../modules/UndoManager";
+import type { createDragDropManager } from "../modules/DragDropManager";
+import type { createTaskManager } from "../modules/TaskManager";
+import { IconPack } from "../../../components/AppIcon";
 
 /**
  * Context to avoid prop-drilling across the complex Explorer feature.
  * Adheres to SoC and DRY by providing common state and handlers to sub-components.
  */
 interface ExplorerContextValue {
-	selection: {
-		selectedIds: () => string[];
-		isSelected: (id: string) => boolean;
-		setSelectedIds: (ids: string[]) => void;
-		selectItem: (
-			id: string,
-			options: { multi: boolean; range: boolean },
-		) => void;
-	};
-	ops: {
-		clipboard: () => string[];
-		clipboardMode: () => "copy" | "cut";
-		handleMove: (sourceIds: string[], targetId: string) => void;
-	};
+	selection: ReturnType<typeof createSelectionManager>;
+	ops: ReturnType<typeof createFileSystemManager>;
+	nav: ReturnType<typeof createNavigationManager>;
+	resources: ReturnType<typeof createResourceManager>;
+	undo: ReturnType<typeof createUndoManager>;
+	dnd: ReturnType<typeof createDragDropManager>;
+	tasks: ReturnType<typeof createTaskManager>;
 	iconPack: () => IconPack;
 	folderSizes: {
 		sizes: () => Record<string, number>;

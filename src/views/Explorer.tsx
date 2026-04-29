@@ -22,20 +22,23 @@ import Sidebar from "../features/explorer/components/Sidebar";
 import StatusBar from "../features/explorer/components/StatusBar";
 import TabBar from "../features/explorer/components/TabBar";
 import Toolbar from "../features/explorer/components/Toolbar";
+import TaskDrawer from "../features/explorer/components/TaskDrawer";
 
 // Logic Hooks & Context
 import { ExplorerProvider } from "../features/explorer/context/ExplorerContext";
 import { useDirectoryWatcher } from "../features/explorer/hooks/useDirectoryWatcher";
 import { useExplorerContextMenu } from "../features/explorer/hooks/useExplorerContextMenu";
-import { useExplorerData } from "../features/explorer/hooks/useExplorerData";
 import { useExplorerInteraction } from "../features/explorer/hooks/useExplorerInteraction";
 import { useExplorerKeyboard } from "../features/explorer/hooks/useExplorerKeyboard";
-import { useExplorerNavigation } from "../features/explorer/hooks/useExplorerNavigation";
-import { useExplorerState } from "../features/explorer/hooks/useExplorerState";
 import { useExternalDragDrop } from "../features/explorer/hooks/useExternalDragDrop";
-import { useFileOperations } from "../features/explorer/hooks/useFileOperations";
 import { useFolderSizes } from "../features/explorer/hooks/useFolderSizes";
-import { useSelectionLogic } from "../features/explorer/hooks/useSelectionLogic";
+import { createDragDropManager } from "../features/explorer/modules/DragDropManager";
+import { createFileSystemManager } from "../features/explorer/modules/FileSystemManager";
+import { createNavigationManager } from "../features/explorer/modules/NavigationManager";
+import { createResourceManager } from "../features/explorer/modules/ResourceManager";
+import { createSelectionManager } from "../features/explorer/modules/SelectionManager";
+import { createTaskManager } from "../features/explorer/modules/TaskManager";
+import { createUndoManager } from "../features/explorer/modules/UndoManager";
 // Global Hooks & Services
 import { useContextMenu } from "../hooks/useContextMenu";
 import { useSettings } from "../hooks/useSettings";
@@ -51,25 +54,29 @@ export default function Explorer() {
 	// --- 1. State Orchestration ---
 	const { iconPack, addFavorite } = useSettings();
 	const contextMenu = useContextMenu();
-	const state = useExplorerState();
-	const nav = useExplorerNavigation();
-
-	const data = useExplorerData({
+	const nav = createNavigationManager();
+	const folderSizes = useFolderSizes();
+	const resources = createResourceManager({
 		currentPath: nav.currentAbsolutePath,
-		refreshTrigger: state.refreshTrigger,
-		searchQuery: state.searchQuery,
-		sortBy: state.sortBy,
-		sortOrder: state.sortOrder,
-		separateFolders: state.separateFolders,
-		showHidden: state.showHidden,
 	});
 
-	const selection = useSelectionLogic(data.displayedFiles);
-	const folderSizes = useFolderSizes();
-	const ops = useFileOperations({
-		currentRoot: nav.currentAbsolutePath,
-		refresh: state.refresh,
-		mutate: data.mutate,
+	const selection = createSelectionManager({
+		files: resources.items,
+		viewMode: resources.viewMode,
+		gridColumns: () => getGridColumns(".folder-grid, .file-grid"),
+	});
+	const tasks = createTaskManager();
+	const ops = createFileSystemManager({
+		refresh: resources.refresh,
+		mutate: resources.mutate,
+		runTask: tasks.runTask,
+		onExecuted: (op, inverse) => undo.push(op, inverse),
+	});
+	const undo = createUndoManager({
+		execute: (op) => ops.execute(op, true),
+	});
+	const dnd = createDragDropManager({
+		execute: ops.execute,
 	});
 
 	const [promptConfig, setPromptConfig] = createSignal<PromptConfig | null>(
@@ -80,7 +87,7 @@ export default function Explorer() {
 
 	const quickLookFile = createMemo(() => {
 		const id = quickLookId();
-		return id ? data.displayedFiles().find((f) => f.id === id) || null : null;
+		return id ? resources.items().find((f) => f.id === id) || null : null;
 	});
 
 	// --- 2. Action Handlers ---
@@ -90,7 +97,7 @@ export default function Explorer() {
 	});
 
 	const handleOpen = async (id: string) => {
-		const file = data.displayedFiles().find((f) => f.id === id);
+		const file = resources.items().find((f) => f.id === id);
 		if (!file) return;
 		if (file.type === "folder") {
 			nav.navigate(id);
@@ -116,11 +123,12 @@ export default function Explorer() {
 	// --- 3. Composite State (Context Value) ---
 	const explorerContextValue = {
 		selection,
-		ops: {
-			clipboard: ops.clipboard,
-			clipboardMode: ops.clipboardMode,
-			handleMove: ops.handleMove,
-		},
+		ops,
+		nav,
+		resources,
+		undo,
+		dnd,
+		tasks,
 		iconPack,
 		folderSizes,
 		handlers: { onOpen: handleOpen },
@@ -131,13 +139,12 @@ export default function Explorer() {
 		selection,
 		ops,
 		nav,
-		data,
+		resources,
 		handlers: {
 			onOpen: handleOpen,
 			setPromptConfig,
 			setInfoModal,
 			openInTerminal: fileSystem.openInTerminal,
-			refresh: state.refresh,
 			addFavorite,
 		},
 	});
@@ -146,29 +153,29 @@ export default function Explorer() {
 		selection,
 		ops,
 		nav,
-		state,
+		resources,
+		undo,
 		handlers: {
 			handleOpen,
 			setQuickLookFileId: setQuickLookId,
 			quickLookFileId: quickLookId,
 		},
-		getGridColumns: () => getGridColumns(".folder-grid, .file-grid"),
 	});
 
 	useDirectoryWatcher({
 		currentPath: nav.currentAbsolutePath,
-		onChanged: state.refresh,
+		onChanged: resources.refresh,
 	});
 
 	useExternalDragDrop({
 		currentPath: nav.currentAbsolutePath,
-		onSuccess: state.refresh,
+		onSuccess: resources.refresh,
 	});
 
 	createEffect(() => {
-		nav.history.currentPath;
-		selection.clearSelection();
-		state.setSearchQuery("");
+		nav.currentPath();
+		selection.clear();
+		resources.setSearchQuery("");
 		folderSizes.clearCache();
 		setQuickLookId(null);
 	});
@@ -181,62 +188,65 @@ export default function Explorer() {
 
 				<div class="app-container">
 					<Sidebar
-						activeLocation={nav.history.currentPath}
+						activeLocation={nav.currentPath()}
 						setActiveLocation={nav.navigate}
 						locations={nav.locations() || []}
-						onMove={ops.handleMove}
+						onMove={(sourceIds, targetId) =>
+							ops.execute({ type: "move", sourceIds, targetDirId: targetId })
+						}
 					/>
 
 					<main class="main-content">
 						<TabBar
-							tabs={nav.history.tabs()}
-							activeIndex={nav.history.activeTabIndex()}
-							onSelect={nav.history.setActiveTab}
-							onClose={nav.history.closeTab}
-							onAdd={() => nav.history.addTab()}
-							onMove={nav.history.moveTab}
+							tabs={nav.tabs()}
+							activeIndex={nav.activeTabIndex()}
+							onSelect={nav.setActiveTab}
+							onClose={nav.closeTab}
+							onAdd={() => nav.addTab()}
+							onMove={nav.moveTab}
 							iconPack={iconPack()}
 							getPathLabel={nav.getLabel}
 						/>
 
 						<Toolbar
-							activeLocation={nav.history.currentPath}
+							activeLocation={nav.currentPath()}
 							activeLocationLabel={nav.activeLocationLabel()}
 							currentAbsolutePath={nav.currentAbsolutePath()}
 							onNavigate={nav.navigate}
-							viewMode={state.viewMode()}
-							setViewMode={state.setViewMode}
-							searchQuery={state.searchQuery()}
-							setSearchQuery={state.setSearchQuery}
+							viewMode={resources.viewMode()}
+							setViewMode={resources.setViewMode}
+							searchQuery={resources.searchQuery()}
+							setSearchQuery={resources.setSearchQuery}
 							iconPack={iconPack()}
-							canGoBack={nav.history.canGoBack}
-							canGoForward={nav.history.canGoForward}
-							onBack={nav.history.goBack}
-							onForward={nav.history.goForward}
-							sortBy={state.sortBy()}
-							setSortBy={state.setSortBy}
-							sortOrder={state.sortOrder()}
-							setSortOrder={state.setSortOrder}
-							separateFolders={state.separateFolders()}
-							setSeparateFolders={state.setSeparateFolders}
-							showHidden={state.showHidden()}
-							setShowHidden={state.setShowHidden}
+							canGoBack={nav.canGoBack()}
+							canGoForward={nav.canGoForward()}
+							onBack={nav.goBack}
+							onForward={nav.goForward}
+							sortBy={resources.sortBy()}
+							setSortBy={resources.setSortBy}
+							sortOrder={resources.sortOrder()}
+							setSortOrder={resources.setSortOrder}
+							separateFolders={resources.separateFolders()}
+							setSeparateFolders={resources.setSeparateFolders}
+							showHidden={resources.showHidden()}
+							setShowHidden={resources.setShowHidden}
 						/>
 
 						<div class="browser-wrapper">
 							<Suspense fallback={<LoadingOverlay active={true} />}>
 								<FileBrowser
-									files={data.displayedFiles()}
-									viewMode={state.viewMode()}
+									files={resources.items()}
+									viewMode={resources.viewMode()}
 									onItemInteract={handleItemInteract}
-									onBackgroundInteract={() => selection.clearSelection()}
+									onBackgroundInteract={() => selection.clear()}
 								/>
 							</Suspense>
-							<LoadingOverlay active={nav.isPending() || state.isLoading} />
+
+							<LoadingOverlay active={nav.isPending() || resources.isLoading()} />
 						</div>
 
 						<StatusBar
-							itemCount={data.displayedFiles().length}
+							itemCount={resources.items().length}
 							selectionCount={selection.selectedIds().length}
 						/>
 					</main>
@@ -262,12 +272,13 @@ export default function Explorer() {
 				<Show when={quickLookFile()}>
 					{(file) => (
 						<QuickLook
-							file={file}
+							file={file()}
 							onClose={() => setQuickLookId(null)}
 							iconPack={iconPack()}
 						/>
 					)}
 				</Show>
+				<TaskDrawer />
 			</div>
 		</ExplorerProvider>
 	);
