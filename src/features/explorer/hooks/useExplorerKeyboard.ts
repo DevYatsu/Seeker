@@ -1,4 +1,5 @@
 import { createEventListener } from "@solid-primitives/event-listener";
+import { useSettings } from "../../../hooks/useSettings";
 
 interface KeyboardOptions {
 	selection: {
@@ -11,7 +12,9 @@ interface KeyboardOptions {
 		) => void;
 	};
 	ops: {
-		execute: (op: import("../modules/FileSystemManager").FileOperation) => Promise<void>;
+		execute: (
+			op: import("../modules/FileSystemManager").FileOperation,
+		) => Promise<void>;
 		copy: (ids: string[]) => void;
 		cut: (ids: string[]) => void;
 		paste: (targetPath: string) => Promise<void>;
@@ -27,6 +30,7 @@ interface KeyboardOptions {
 	};
 	resources: {
 		setSearchQuery: (q: string) => void;
+		setViewMode: (mode: import("../modules/ResourceManager").ViewMode) => void;
 	};
 	undo: {
 		undo: () => Promise<void>;
@@ -34,12 +38,15 @@ interface KeyboardOptions {
 	};
 	handlers: {
 		handleOpen: (id: string) => void;
-		setQuickLookFileId: (id: string | null) => void;
-		quickLookFileId: () => string | null;
+		setQuickLookFileId: (ids: string[] | null) => void;
+		quickLookFileId: () => string[] | null;
+		setIsPaletteOpen: (val: boolean) => void;
 	};
 }
 
 export function useExplorerKeyboard(opts: KeyboardOptions) {
+	const { gridZoom, setGridZoom } = useSettings();
+
 	const handleKeyDown = async (e: KeyboardEvent) => {
 		// Skip when typing in inputs
 		if (
@@ -55,6 +62,19 @@ export function useExplorerKeyboard(opts: KeyboardOptions) {
 		// --- Modifier combos ---
 		if (cmdOrCtrl) {
 			switch (key.toLowerCase()) {
+				case "=":
+				case "+":
+					e.preventDefault();
+					setGridZoom((z) => Math.min(3.0, z + 0.15));
+					return;
+				case "-":
+					e.preventDefault();
+					setGridZoom((z) => Math.max(0.4, z - 0.15));
+					return;
+				case "0":
+					e.preventDefault();
+					setGridZoom(1.0);
+					return;
 				case "c":
 					opts.ops.copy(opts.selection.selectedIds());
 					return;
@@ -89,6 +109,24 @@ export function useExplorerKeyboard(opts: KeyboardOptions) {
 					} else {
 						opts.undo.undo();
 					}
+					return;
+				case "p":
+					if (e.shiftKey) {
+						e.preventDefault();
+						opts.handlers.setIsPaletteOpen(true);
+					}
+					return;
+				case "1":
+					e.preventDefault();
+					opts.resources.setViewMode("list");
+					return;
+				case "2":
+					e.preventDefault();
+					opts.resources.setViewMode("grid");
+					return;
+				case "3":
+					e.preventDefault();
+					opts.resources.setViewMode("column");
 					return;
 			}
 		}
@@ -133,7 +171,7 @@ export function useExplorerKeyboard(opts: KeyboardOptions) {
 			} else {
 				const ids = opts.selection.selectedIds();
 				if (ids.length > 0) {
-					opts.handlers.setQuickLookFileId(ids[0]);
+					opts.handlers.setQuickLookFileId(ids);
 				}
 			}
 			return;

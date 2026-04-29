@@ -2,8 +2,8 @@ export interface FileItem {
 	id: string;
 	name: string;
 	type: "file" | "folder";
-	size: number;
-	updatedAt: string;
+	size?: number;
+	updatedAt?: number | string;
 	ext?: string;
 }
 

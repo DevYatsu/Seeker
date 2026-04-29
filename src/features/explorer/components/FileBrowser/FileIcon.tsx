@@ -1,5 +1,12 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import {
+	createEffect,
+	createMemo,
+	createSignal,
+	Match,
+	Show,
+	Switch,
+} from "solid-js";
 import {
 	getCatppuccinFileIcon,
 	getCatppuccinFolderIcon,
@@ -11,7 +18,11 @@ import {
 import { AppIcon, type IconPack } from "../../../../components/AppIcon";
 import { useSettings } from "../../../../hooks/useSettings";
 
+// Global cache for .app icons to avoid redundant IPC calls
+const APP_ICON_CACHE = new Map<string, string>();
+
 export const FileIcon = (props: {
+	id?: string;
 	type: "file" | "folder";
 	name: string;
 	pack: IconPack;
@@ -22,6 +33,35 @@ export const FileIcon = (props: {
 
 	const [hasError, setHasError] = createSignal(false);
 	const [fallbackToDefault, setFallbackToDefault] = createSignal(false);
+	const [appIconPath, setAppIconPath] = createSignal<string | null>(null);
+
+	createEffect(() => {
+		if (props.id && props.name.endsWith(".app")) {
+			const cached = APP_ICON_CACHE.get(props.id);
+			if (cached) {
+				setAppIconPath(cached);
+				return;
+			}
+
+			invoke<string>("get_app_icon", { app_path: props.id })
+				.then((path) => {
+					APP_ICON_CACHE.set(props.id!, path);
+					setAppIconPath(path);
+				})
+				.catch((err) => {
+					console.error("Failed to load app icon:", err);
+					setFallbackToDefault(true);
+				});
+		}
+	});
+
+	const isThumbnailable = createMemo(() => {
+		const ext = props.name.split(".").pop()?.toLowerCase();
+		if (props.type === "folder" && ext !== "app") return false;
+		return ["jpg", "jpeg", "png", "gif", "webp", "svg", "app"].includes(
+			ext || "",
+		);
+	});
 
 	createEffect(() => {
 		// Reset error state when pack or name changes
@@ -95,9 +135,53 @@ export const FileIcon = (props: {
 	});
 
 	return (
-		<Show
-			when={iconData().isCustom}
-			fallback={
+		<Switch>
+			<Match when={isThumbnailable() && props.id}>
+				<div
+					class="image-thumbnail"
+					style={{
+						width: `${props.size}px`,
+						height: `${props.size}px`,
+						display: "flex",
+						"align-items": "center",
+						"justify-content": "center",
+						overflow: "hidden",
+						"border-radius": "4px",
+					}}
+				>
+					<img
+						src={convertFileSrc(appIconPath() || props.id!)}
+						alt=""
+						style={{
+							"max-width": "100%",
+							"max-height": "100%",
+							"object-fit": "cover",
+						}}
+					/>
+				</div>
+			</Match>
+
+			<Match when={iconData().isCustom}>
+				<img
+					src={iconData().src}
+					alt=""
+					onerror={() => {
+						if (!fallbackToDefault() && iconData().isCustom) {
+							setFallbackToDefault(true);
+						} else {
+							setHasError(true);
+						}
+					}}
+					style={{
+						width: `${props.size}px`,
+						height: `${props.size}px`,
+						"flex-shrink": 0,
+						"object-fit": "contain",
+					}}
+				/>
+			</Match>
+
+			<Match when={true}>
 				<AppIcon
 					name={
 						iconData().name || (props.type === "folder" ? "Folder" : "File")
@@ -106,25 +190,7 @@ export const FileIcon = (props: {
 					size={props.size}
 					style={{ "flex-shrink": 0 }}
 				/>
-			}
-		>
-			<img
-				src={iconData().src}
-				alt=""
-				onerror={() => {
-					if (!fallbackToDefault() && iconData().isCustom) {
-						setFallbackToDefault(true);
-					} else {
-						setHasError(true);
-					}
-				}}
-				style={{
-					width: `${props.size}px`,
-					height: `${props.size}px`,
-					"flex-shrink": 0,
-					"object-fit": "contain",
-				}}
-			/>
-		</Show>
+			</Match>
+		</Switch>
 	);
 };

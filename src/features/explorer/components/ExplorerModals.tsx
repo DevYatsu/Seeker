@@ -1,10 +1,12 @@
 import { Show } from "solid-js";
 import type { IconPack } from "../../../components/AppIcon";
 import { Modal } from "../../../components/Modal";
+import { CommandPalette } from "../../../components/CommandPalette";
 import { formatDate, formatSize } from "../../../utils/formatters";
 import type { FileItem } from "../../../utils/mockData";
 import { getFileExtension } from "../../../utils/path";
 import { FileIcon } from "./FileBrowser/FileIcon";
+import { BatchRenameModal, type BatchRenameConfig } from "./BatchRenameModal";
 
 export interface PromptConfig {
 	title: string;
@@ -21,17 +23,22 @@ interface ExplorerModalsProps {
 	setInfoModal: (val: InfoModal | null) => void;
 	promptConfig: PromptConfig | null;
 	setPromptConfig: (val: PromptConfig | null) => void;
+	batchRenameConfig: BatchRenameConfig | null;
+	setBatchRenameConfig: (val: BatchRenameConfig | null) => void;
+	isPaletteOpen: boolean;
+	setIsPaletteOpen: (val: boolean) => void;
+	paletteCommands: import("../../../components/CommandPalette").Command[];
 	iconPack: IconPack;
 }
 
 /**
  * Orchestrator for Explorer dialogs.
- * Uses the generic Modal component to keep the UI logic thin and focused.
+ * Uses specialized components (Modal, CommandPalette) to keep UI logic thin.
  */
 export function ExplorerModals(props: ExplorerModalsProps) {
 	return (
 		<>
-			{/* File Information Modal */}
+			{/* File Information Modal (Centered because it's a detail view) */}
 			<Show when={props.infoModal}>
 				<Modal
 					isOpen={true}
@@ -40,6 +47,7 @@ export function ExplorerModals(props: ExplorerModalsProps) {
 				>
 					<div class="info-header">
 						<FileIcon
+							id={props.infoModal?.file.id}
 							type={props.infoModal?.file.type}
 							name={props.infoModal?.file.name || ""}
 							pack={props.iconPack}
@@ -88,47 +96,69 @@ export function ExplorerModals(props: ExplorerModalsProps) {
 				</Modal>
 			</Show>
 
-			{/* Text Input Prompt Modal */}
-			<Show when={props.promptConfig}>
-				<Modal
-					isOpen={true}
-					onClose={() => props.setPromptConfig(null)}
-					title={props.promptConfig?.title}
+			{/* Global Command Palette */}
+			<CommandPalette
+				isOpen={props.isPaletteOpen}
+				onClose={() => props.setIsPaletteOpen(false)}
+				commands={props.paletteCommands}
+				iconPack={props.iconPack}
+			/>
+
+			{/* Text Input Prompt (VS Code Style Palette) */}
+			<CommandPalette
+				isOpen={!!props.promptConfig}
+				onClose={() => props.setPromptConfig(null)}
+				iconPack={props.iconPack}
+			>
+				<form
+					onSubmit={(e) => {
+						e.preventDefault();
+						const input = new FormData(e.currentTarget).get(
+							"promptInput",
+						) as string;
+						if (input?.trim()) {
+							props.promptConfig?.onSubmit(input.trim());
+						}
+						props.setPromptConfig(null);
+					}}
 				>
-					<form
-						onSubmit={(e) => {
-							e.preventDefault();
-							const input = new FormData(e.currentTarget).get(
-								"promptInput",
-							) as string;
-							if (input?.trim()) {
-								props.promptConfig?.onSubmit(input.trim());
-							}
-							props.setPromptConfig(null);
-						}}
-					>
+					<div class="palette-input-wrapper">
+						<FileIcon
+							type="file"
+							name={props.promptConfig?.defaultValue || ""}
+							pack={props.iconPack}
+							size={16}
+						/>
 						<input
 							name="promptInput"
 							type="text"
 							autofocus
 							value={props.promptConfig?.defaultValue || ""}
-							class="modal-input"
+							class="palette-input"
+							placeholder={props.promptConfig?.title}
 						/>
-						<div class="modal-actions">
-							<button
-								type="button"
-								class="cancel-btn"
-								onClick={() => props.setPromptConfig(null)}
-							>
-								Cancel
-							</button>
-							<button type="submit" class="ok-btn">
-								Confirm
-							</button>
-						</div>
-					</form>
-				</Modal>
-			</Show>
+					</div>
+					<div class="palette-actions">
+						<span class="palette-hint">Press Enter to confirm</span>
+						<button
+							type="button"
+							class="palette-btn palette-btn-secondary"
+							onClick={() => props.setPromptConfig(null)}
+						>
+							Cancel
+						</button>
+						<button type="submit" class="palette-btn palette-btn-primary">
+							Confirm
+						</button>
+					</div>
+				</form>
+			</CommandPalette>
+
+			{/* Batch Rename Modal */}
+			<BatchRenameModal
+				config={props.batchRenameConfig}
+				onClose={() => props.setBatchRenameConfig(null)}
+			/>
 		</>
 	);
 }

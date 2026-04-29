@@ -3,6 +3,7 @@ import type { FileItem } from "../../../utils/mockData";
 import { getSelectionModifiers } from "../../../utils/ui";
 import { GridView } from "./FileBrowser/GridView";
 import { ListView } from "./FileBrowser/ListView";
+import { ColumnView } from "./FileBrowser/ColumnView";
 
 export interface InteractionEvent {
 	id: string;
@@ -13,9 +14,11 @@ export interface InteractionEvent {
 
 type FileBrowserProps = {
 	files: FileItem[];
-	viewMode: "list" | "grid";
+	viewMode: "list" | "grid" | "column";
 	onItemInteract: (event: InteractionEvent) => void;
 	onBackgroundInteract: (e: UIEvent) => void;
+	onNavigate: (path: string) => void;
+	iconPack: () => any;
 };
 
 /**
@@ -53,6 +56,15 @@ export default function FileBrowser(props: FileBrowserProps) {
 
 			<Show when={props.viewMode === "grid"}>
 				<GridView files={props.files} onItemInteract={handleInteraction} />
+			</Show>
+
+			<Show when={props.viewMode === "column"}>
+				<ColumnView
+					files={props.files}
+					onItemInteract={handleInteraction}
+					onNavigate={props.onNavigate}
+					iconPack={props.iconPack}
+				/>
 			</Show>
 		</div>
 	);

@@ -31,6 +31,7 @@ interface ExplorerContextValue {
 		calculating: () => Set<string>;
 		calculateSize: (path: string) => void;
 	};
+	fetchMetadata: (ids: string[]) => Promise<void>;
 	handlers: {
 		onOpen: (id: string) => void;
 	};

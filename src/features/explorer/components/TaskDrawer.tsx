@@ -22,7 +22,10 @@ export default function TaskDrawer() {
 				<div class="task-list">
 					<For each={tasks.activeTasks()}>
 						{(task) => (
-							<div class="task-item" classList={{ error: task.status === "error" }}>
+							<div
+								class="task-item"
+								classList={{ error: task.status === "error" }}
+							>
 								<div class="task-icon">
 									{task.status === "running" ? (
 										<div class="mini-spinner" />

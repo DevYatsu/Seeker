@@ -45,6 +45,8 @@ pub fn run() {
             commands::fs::copy_items,
             commands::fs::move_items,
             commands::fs::duplicate_items,
+            commands::fs::compress_items,
+            commands::fs::extract_archive,
             commands::fs::open_in_terminal,
             commands::preview::read_file_preview,
             download_icons,
@@ -54,7 +56,10 @@ pub fn run() {
             get_installed_packs,
             get_installed_fonts,
             list_resources,
-            get_base_icons_path
+            get_base_icons_path,
+            commands::fs::get_app_icon,
+            commands::fs::get_items_metadata,
+            commands::window::open_new_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

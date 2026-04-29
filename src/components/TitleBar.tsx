@@ -1,15 +1,19 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export default function TitleBar(props: { title?: string }) {
-	const handleDoubleClick = async () => {
-		await getCurrentWindow().toggleMaximize();
+	const handleMouseDown = async (e: MouseEvent) => {
+		// Toggle maximize on double click (detail === 2)
+		if (e.detail === 2) {
+			const win = getCurrentWindow();
+			await win.toggleMaximize();
+		}
 	};
 
 	return (
 		<div
 			data-tauri-drag-region
 			class="title-bar"
-			onDblClick={handleDoubleClick}
+			onMouseDown={handleMouseDown}
 			role="none"
 		>
 			<div data-tauri-drag-region class="title-bar-content">

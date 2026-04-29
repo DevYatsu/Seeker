@@ -1,6 +1,14 @@
 import { makePersisted } from "@solid-primitives/storage";
 import { emit, listen } from "@tauri-apps/api/event";
-import { batch, createEffect, createRoot, createSignal } from "solid-js";
+import {
+	batch,
+	createContext,
+	createEffect,
+	createSignal,
+	onCleanup,
+	useContext,
+	type JSX,
+} from "solid-js";
 import { resourceService } from "../services/apiService";
 
 export type IconPack =
@@ -11,6 +19,14 @@ export type IconPack =
 	| "catppuccin/macchiato"
 	| "catppuccin/latte"
 	| "lucide";
+
+interface SettingsState {
+	theme: "dark" | "light";
+	iconPack: IconPack;
+	visibleNavIds: string[];
+	favoritePaths: { id: string; label: string; path: string }[];
+	gridZoom: number;
+}
 
 function createSettingsState() {
 	const [theme, setTheme] = makePersisted(
@@ -85,6 +101,17 @@ function createSettingsState() {
 		},
 	);
 
+	const [gridZoom, setGridZoom] = makePersisted(createSignal<number>(1.0), {
+		name: "seeker-grid-zoom",
+		deserialize: (v: string) => {
+			try {
+				return parseFloat(v) || 1.0;
+			} catch (_e) {
+				return 1.0;
+			}
+		},
+	});
+
 	const [isDownloading, setIsDownloading] = createSignal(false);
 	const [downloadProgress, setDownloadProgress] = createSignal<{
 		pack: string;
@@ -113,13 +140,6 @@ function createSettingsState() {
 		syncAssets();
 	});
 
-	interface SettingsState {
-		theme: "dark" | "light";
-		iconPack: IconPack;
-		visibleNavIds: string[];
-		favoritePaths: { id: string; label: string; path: string }[];
-	}
-
 	// Apply theme to document
 	createEffect(() => {
 		const currentTheme = theme();
@@ -131,40 +151,50 @@ function createSettingsState() {
 	let isRemoteUpdate = false;
 
 	// Listen for remote changes (from other windows)
-	listen("sync-assets", () => syncAssets());
+	const unlistenAssets = listen("sync-assets", () => syncAssets());
+	onCleanup(() => unlistenAssets.then((f) => f()));
 
 	// Sync settings state
-	listen("sync-settings", (event: { payload: SettingsState }) => {
-		const {
-			theme: newTheme,
-			iconPack: newIconPack,
-			visibleNavIds: newNavIds,
-			favoritePaths: newFavPaths,
-		} = event.payload;
+	const unlistenSettings = listen(
+		"sync-settings",
+		(event: { payload: SettingsState }) => {
+			const {
+				theme: newTheme,
+				iconPack: newIconPack,
+				visibleNavIds: newNavIds,
+				favoritePaths: newFavPaths,
+				gridZoom: newGridZoom,
+			} = event.payload;
 
-		batch(() => {
-			isRemoteUpdate = true;
-			if (newTheme && newTheme !== theme()) setTheme(newTheme);
-			if (newIconPack && newIconPack !== iconPack()) setIconPack(newIconPack);
-			if (
-				newNavIds &&
-				JSON.stringify(newNavIds) !== JSON.stringify(visibleNavIds())
-			) {
-				setVisibleNavIds(newNavIds);
-			}
-			if (
-				newFavPaths &&
-				JSON.stringify(newFavPaths) !== JSON.stringify(favoritePaths())
-			) {
-				setFavoritePaths(newFavPaths);
-			}
+			batch(() => {
+				isRemoteUpdate = true;
+				if (newTheme && newTheme !== theme()) setTheme(newTheme);
+				if (newIconPack && newIconPack !== iconPack()) setIconPack(newIconPack);
+				if (
+					newNavIds &&
+					JSON.stringify(newNavIds) !== JSON.stringify(visibleNavIds())
+				) {
+					setVisibleNavIds(newNavIds);
+				}
+				if (
+					newFavPaths &&
+					JSON.stringify(newFavPaths) !== JSON.stringify(favoritePaths())
+				) {
+					setFavoritePaths(newFavPaths);
+				}
+				if (newGridZoom !== undefined && newGridZoom !== gridZoom()) {
+					setGridZoom(newGridZoom);
+				}
 
-			// Reset flag after SolidJS batch or next tick
-			setTimeout(() => {
-				isRemoteUpdate = false;
-			}, 10);
-		});
-	});
+				// Reset flag after SolidJS batch or next tick
+				setTimeout(() => {
+					isRemoteUpdate = false;
+				}, 10);
+			});
+		},
+	);
+	onCleanup(() => unlistenSettings.then((f) => f()));
+
 	const broadcastSettings = async () => {
 		if (isRemoteUpdate) return;
 		emit("sync-settings", {
@@ -172,6 +202,7 @@ function createSettingsState() {
 			iconPack: iconPack(),
 			visibleNavIds: visibleNavIds(),
 			favoritePaths: favoritePaths(),
+			gridZoom: gridZoom(),
 		} as SettingsState);
 	};
 
@@ -181,6 +212,7 @@ function createSettingsState() {
 		iconPack();
 		visibleNavIds();
 		favoritePaths();
+		gridZoom();
 		broadcastSettings();
 	});
 
@@ -267,6 +299,8 @@ function createSettingsState() {
 		favoritePaths,
 		addFavorite,
 		removeFavorite,
+		gridZoom,
+		setGridZoom,
 		isDownloading,
 		downloadProgress,
 		installedPacks,
@@ -279,10 +313,24 @@ function createSettingsState() {
 	};
 }
 
-// Create a global instance
-const settings = createRoot(createSettingsState);
+export type SettingsContextType = ReturnType<typeof createSettingsState>;
+const SettingsContext = createContext<SettingsContextType>(
+	{} as SettingsContextType,
+);
 
-// Hook to access the global instance
+export function SettingsProvider(props: { children: JSX.Element }) {
+	const settings = createSettingsState();
+	return (
+		<SettingsContext.Provider value={settings}>
+			{props.children}
+		</SettingsContext.Provider>
+	);
+}
+
 export function useSettings() {
-	return settings;
+	const context = useContext(SettingsContext);
+	if (!context) {
+		throw new Error("useSettings must be used within a SettingsProvider");
+	}
+	return context;
 }

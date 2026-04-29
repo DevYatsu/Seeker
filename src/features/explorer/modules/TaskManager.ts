@@ -19,7 +19,12 @@ export function createTaskManager() {
 
 	const runTask = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
 		const id = crypto.randomUUID();
-		const newTask: Task = { id, name, status: "running", startTime: Date.now() };
+		const newTask: Task = {
+			id,
+			name,
+			status: "running",
+			startTime: Date.now(),
+		};
 
 		setActiveTasks((prev) => [...prev, newTask]);
 

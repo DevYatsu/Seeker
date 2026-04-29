@@ -1,11 +1,15 @@
 import { useExplorer } from "../context/ExplorerContext";
 import { useSettings } from "../../../hooks/useSettings";
-import type { NavigationLocation } from "../../../services/apiService";
+import type {
+	NavigationLocation,
+	StorageStats,
+} from "../../../services/apiService";
 
 interface SidebarOptions {
 	activeLocation: string;
 	setActiveLocation: (id: string) => void;
 	locations: NavigationLocation[];
+	storage?: StorageStats;
 }
 
 /**

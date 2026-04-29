@@ -1,9 +1,16 @@
+use serde::Serialize;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+#[derive(Serialize)]
+pub struct PreviewResult {
+    pub content: String,
+    pub is_binary: bool,
+}
+
 #[tauri::command]
-pub fn read_file_preview(path: String, max_bytes: Option<usize>) -> Result<String, String> {
+pub fn read_file_preview(path: String, max_bytes: Option<usize>) -> Result<PreviewResult, String> {
     let p = Path::new(&path);
     if !p.exists() || p.is_dir() {
         return Err("Path is not a valid file".into());
@@ -20,8 +27,16 @@ pub fn read_file_preview(path: String, max_bytes: Option<usize>) -> Result<Strin
     };
 
     let mut buffer = vec![0; read_len as usize];
-    file.read_exact(&mut buffer).map_err(|e| e.to_string())?;
+    // Use read instead of read_exact to handle files smaller than expected if metadata was stale
+    let bytes_read = file.read(&mut buffer).map_err(|e| e.to_string())?;
+    buffer.truncate(bytes_read);
 
-    // Attempt to parse as UTF-8 lossy
-    Ok(String::from_utf8_lossy(&buffer).into_owned())
+    // Heuristic: Check for null bytes or a very high percentage of control characters
+    let is_binary = buffer.iter().any(|&b| b == 0);
+
+    Ok(PreviewResult {
+        content: String::from_utf8_lossy(&buffer).into_owned(),
+        is_binary,
+    })
 }
+

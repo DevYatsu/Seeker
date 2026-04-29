@@ -1,4 +1,4 @@
-import { createSelector, createSignal, type Accessor } from "solid-js";
+import { createSelector, createSignal, type Accessor, batch } from "solid-js";
 import type { FileItem } from "../../../utils/mockData";
 import type { InteractionEvent } from "../components/FileBrowser";
 
@@ -6,48 +6,50 @@ export type NavigationDirection = "up" | "down" | "left" | "right";
 
 export interface SelectionConfig {
 	files: Accessor<FileItem[]>;
-	viewMode: Accessor<"grid" | "list">;
+	viewMode: Accessor<"grid" | "list" | "column">;
 	gridColumns: Accessor<number>;
 }
 
 /**
  * Unified Selection Module
  *
- * Depth: High. Handles all selection state and logic behind a small interface.
- * Leverage: Callers send high-level events (Interaction, Navigation) instead of managing indices.
- * Locality: All range math, multi-select logic, and 2D navigation live here.
+ * Optimized to use a Set for O(1) lookups and updates.
  */
 export function createSelectionManager(config: SelectionConfig) {
-	const [selectedIds, setSelectedIds] = createSignal<string[]>([]);
-	const isSelected = createSelector(selectedIds);
+	// Use a Set for performance, but we need to trigger updates by cloning
+	const [selectedSet, setSelectedSet] = createSignal<Set<string>>(new Set());
+	const [lastId, setLastId] = createSignal<string | null>(null);
+
+	const isSelected = createSelector<string, Set<string>>(
+		selectedSet,
+		(id, set) => set.has(id),
+	);
 
 	/** Internal helper to find indices in current file list */
-	const getIndex = (id: string) =>
-		config.files().findIndex((f) => f.id === id);
-
-	/** Get the "cursor" (last selected item) index */
-	const getFocusedIndex = () => {
-		const current = selectedIds();
-		if (current.length === 0) return -1;
-		return getIndex(current[current.length - 1]);
-	};
+	const getIndex = (id: string) => config.files().findIndex((f) => f.id === id);
 
 	const handleInteraction = (event: InteractionEvent) => {
 		const { id, multi, range, rightClick } = event;
-		const current = selectedIds();
 
 		if (rightClick) {
-			if (!current.includes(id)) setSelectedIds([id]);
+			if (!selectedSet().has(id)) {
+				batch(() => {
+					setSelectedSet(new Set([id]));
+					setLastId(id);
+				});
+			}
 			return;
 		}
 
-		if (range && current.length > 0) {
-			const lastId = current[current.length - 1];
-			const startIdx = getIndex(lastId);
+		if (range && lastId()) {
+			const startIdx = getIndex(lastId()!);
 			const endIdx = getIndex(id);
 
 			if (startIdx === -1 || endIdx === -1) {
-				setSelectedIds([id]);
+				batch(() => {
+					setSelectedSet(new Set([id]));
+					setLastId(id);
+				});
 				return;
 			}
 
@@ -58,15 +60,28 @@ export function createSelectionManager(config: SelectionConfig) {
 				.slice(start, end + 1)
 				.map((f) => f.id);
 
-			setSelectedIds([...new Set([...current, ...rangeIds])]);
+			batch(() => {
+				const nextSet = multi ? new Set(selectedSet()) : new Set();
+				for (const rid of rangeIds) nextSet.add(rid);
+				setSelectedSet(nextSet);
+				setLastId(id);
+			});
 		} else if (multi) {
-			if (current.includes(id)) {
-				setSelectedIds(current.filter((i) => i !== id));
+			const nextSet = new Set(selectedSet());
+			if (nextSet.has(id)) {
+				nextSet.delete(id);
 			} else {
-				setSelectedIds([...current, id]);
+				nextSet.add(id);
 			}
+			batch(() => {
+				setSelectedSet(nextSet);
+				setLastId(id);
+			});
 		} else {
-			setSelectedIds([id]);
+			batch(() => {
+				setSelectedSet(new Set([id]));
+				setLastId(id);
+			});
 		}
 	};
 
@@ -77,52 +92,63 @@ export function createSelectionManager(config: SelectionConfig) {
 		const allFiles = config.files();
 		if (allFiles.length === 0) return;
 
-		const currentIdx = getFocusedIndex();
+		const currentIdx = lastId() ? getIndex(lastId()!) : -1;
 		const isGrid = config.viewMode() === "grid";
 		const columns = config.gridColumns();
 
-		let nextIdx = currentIdx;
+		let nextIdx = currentIdx === -1 ? 0 : currentIdx;
 
-		switch (direction) {
-			case "down":
-				nextIdx += isGrid ? columns : 1;
-				break;
-			case "up":
-				nextIdx -= isGrid ? columns : 1;
-				break;
-			case "right":
-				if (isGrid) nextIdx += 1;
-				break;
-			case "left":
-				if (isGrid) nextIdx -= 1;
-				break;
+		if (currentIdx !== -1) {
+			switch (direction) {
+				case "down":
+					nextIdx += isGrid ? columns : 1;
+					break;
+				case "up":
+					nextIdx -= isGrid ? columns : 1;
+					break;
+				case "right":
+					nextIdx += 1;
+					break;
+				case "left":
+					nextIdx -= 1;
+					break;
+			}
 		}
 
-		// Clamp to valid range
-		if (nextIdx < 0) nextIdx = 0;
-		if (nextIdx >= allFiles.length) nextIdx = allFiles.length - 1;
-
-		if (nextIdx === currentIdx) return;
+		nextIdx = Math.max(0, Math.min(nextIdx, allFiles.length - 1));
+		if (nextIdx === currentIdx && currentIdx !== -1) return;
 
 		const nextId = allFiles[nextIdx].id;
 
 		if (options.extend) {
-			const current = selectedIds();
-			if (!current.includes(nextId)) {
-				setSelectedIds([...current, nextId]);
-			}
+			const nextSet = new Set(selectedSet());
+			nextSet.add(nextId);
+			batch(() => {
+				setSelectedSet(nextSet);
+				setLastId(nextId);
+			});
 		} else {
-			setSelectedIds([nextId]);
+			batch(() => {
+				setSelectedSet(new Set([nextId]));
+				setLastId(nextId);
+			});
 		}
 	};
 
-	const selectAll = () => setSelectedIds(config.files().map((f) => f.id));
-	const clear = () => setSelectedIds([]);
+	const selectAll = () => {
+		setSelectedSet(new Set(config.files().map((f) => f.id)));
+	};
+
+	const clear = () => {
+		batch(() => {
+			setSelectedSet(new Set());
+			setLastId(null);
+		});
+	};
 
 	return {
-		selectedIds,
+		selectedIds: () => Array.from(selectedSet()),
 		isSelected,
-		setSelectedIds,
 		handleInteraction,
 		handleNavigation,
 		selectAll,

@@ -13,18 +13,18 @@
 		"macOSPrivateApi": true,
 		"windows": [
 			{
-				"title": "",
+				"title": "Seeker",
 				"width": 1000,
 				"height": 700,
 				"transparent": true,
-				"titleBarStyle": "Overlay"
+				"titleBarStyle": "Visible"
 			}
 		],
 		"security": {
 			"csp": null,
 			"assetProtocol": {
 				"enable": true,
-				"scope": ["$APPLOCALDATA/resources/**"]
+				"scope": ["**"]
 			},
 			"capabilities": [
 				{
@@ -34,7 +34,8 @@
 						"core:window:allow-start-dragging",
 						"core:window:allow-toggle-maximize",
 						"core:window:allow-create",
-						"core:window:allow-close"
+						"core:window:allow-close",
+						"core:window:allow-set-focus"
 					]
 				},
 				{

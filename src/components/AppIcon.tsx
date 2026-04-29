@@ -1,5 +1,7 @@
 import {
 	AppWindow,
+	ArrowLeft,
+	ArrowRight,
 	AudioLines,
 	Binary,
 	Check,
@@ -9,6 +11,7 @@ import {
 	ChevronUp,
 	Clipboard,
 	CloudDownload,
+	Columns3,
 	Copy,
 	CopyPlus,
 	Download,
@@ -42,8 +45,10 @@ import {
 	PanelLeft,
 	Pencil,
 	Plus,
+	Redo2,
 	RefreshCw,
 	Search,
+	Scissors,
 	Settings,
 	Star,
 	Sun,
@@ -81,6 +86,7 @@ export const IconMap: Record<string, any> = {
 	ChevronDown: ChevronDown,
 	ChevronUp: ChevronUp,
 	List: List,
+	Columns: Columns3,
 	Grid: LayoutGrid,
 	Settings: Settings,
 	FolderPlus: FolderPlus,
@@ -106,6 +112,10 @@ export const IconMap: Record<string, any> = {
 	Film: Film,
 	Users: Users,
 	Undo: Undo,
+	Redo: Redo2,
+	Scissors: Scissors,
+	ArrowLeft: ArrowLeft,
+	ArrowRight: ArrowRight,
 	Palette: Palette,
 	Sidebar: PanelLeft,
 	Type: Type,
@@ -122,6 +132,7 @@ export const IconMap: Record<string, any> = {
 	MoreVertical: MoreVertical,
 	MoreHorizontal: MoreHorizontal,
 	RefreshCw: RefreshCw,
+	Gallery: Image,
 };
 
 /**

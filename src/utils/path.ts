@@ -34,6 +34,58 @@ export function getFileExtension(path: string): string {
 const IMAGE_EXTS = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico"];
 const VIDEO_EXTS = ["mp4", "webm", "ogg", "mov", "mkv"];
 const AUDIO_EXTS = ["mp3", "wav", "flac", "aac", "m4a"];
+const TEXT_EXTS = [
+	"txt",
+	"md",
+	"markdown",
+	"js",
+	"ts",
+	"tsx",
+	"jsx",
+	"html",
+	"css",
+	"scss",
+	"less",
+	"json",
+	"xml",
+	"yaml",
+	"yml",
+	"toml",
+	"ini",
+	"conf",
+	"sh",
+	"bash",
+	"zsh",
+	"py",
+	"rb",
+	"pl",
+	"php",
+	"c",
+	"cpp",
+	"h",
+	"hpp",
+	"rs",
+	"go",
+	"java",
+	"kt",
+	"swift",
+	"sql",
+	"log",
+	"lock",
+	"env",
+	"gitignore",
+	"gitattributes",
+	"gitconfig",
+	"dockerfile",
+	"makefile",
+	"plist",
+	"cfg",
+	"pub",
+	"key",
+	"pem",
+	"crt",
+	"cert",
+];
 
 export type FileTypeCategory =
 	| "image"
@@ -41,12 +93,14 @@ export type FileTypeCategory =
 	| "audio"
 	| "text"
 	| "folder"
+	| "binary"
 	| "unknown";
 
 /**
  * Categorizes a file based on its extension or type.
  */
 export function getFileTypeCategory(file: {
+	name: string;
 	type: string;
 	ext?: string;
 }): FileTypeCategory {
@@ -56,8 +110,45 @@ export function getFileTypeCategory(file: {
 	if (IMAGE_EXTS.includes(ext)) return "image";
 	if (VIDEO_EXTS.includes(ext)) return "video";
 	if (AUDIO_EXTS.includes(ext)) return "audio";
+	if (TEXT_EXTS.includes(ext)) return "text";
 
-	return "text"; // Default fallback for now
+	// Common binary extensions to avoid garbage text previews
+	const BINARY_EXTS = [
+		"exe",
+		"dll",
+		"dylib",
+		"so",
+		"a",
+		"o",
+		"obj",
+		"bin",
+		"dat",
+		"db",
+		"sqlite",
+		"dmg",
+		"pkg",
+		"iso",
+	];
+	if (BINARY_EXTS.includes(ext)) return "binary";
+
+	// If no known type, return unknown to trigger content-based detection in preview
+	if (
+		!ext &&
+		![
+			"makefile",
+			"dockerfile",
+			"license",
+			"readme",
+			".env",
+			".gitignore",
+			".bashrc",
+			".zshrc",
+		].includes(name)
+	) {
+		return "unknown";
+	}
+
+	return "text";
 }
 
 /**

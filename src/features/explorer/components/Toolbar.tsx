@@ -1,4 +1,4 @@
-import { createSignal, For } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { AppIcon, type IconPack } from "../../../components/AppIcon";
 import { useToolbar } from "../hooks/useToolbar";
 import { useExplorer } from "../context/ExplorerContext";
@@ -8,8 +8,8 @@ type ToolbarProps = {
 	activeLocationLabel: string;
 	currentAbsolutePath: string;
 	onNavigate: (path: string) => void;
-	viewMode: "list" | "grid";
-	setViewMode: (val: "list" | "grid") => void;
+	viewMode: "list" | "grid" | "column";
+	setViewMode: (val: "list" | "grid" | "column") => void;
 	searchQuery: string;
 	setSearchQuery: (val: string) => void;
 	iconPack: IconPack;
@@ -29,6 +29,9 @@ type ToolbarProps = {
 
 export default function Toolbar(props: ToolbarProps) {
 	const { dnd } = useExplorer();
+	const [isEditingPath, setIsEditingPath] = createSignal(false);
+	const [pathInput, setPathInput] = createSignal("");
+
 	const {
 		breadcrumbs,
 		toggleSortOrder,
@@ -45,7 +48,7 @@ export default function Toolbar(props: ToolbarProps) {
 					disabled={!props.canGoBack}
 					onClick={() => props.onBack()}
 				>
-					<AppIcon pack={props.iconPack} name="ChevronLeft" size={18} />
+					<AppIcon pack={props.iconPack} name="ArrowLeft" size={18} />
 				</button>
 				<button
 					type="button"
@@ -53,38 +56,71 @@ export default function Toolbar(props: ToolbarProps) {
 					disabled={!props.canGoForward}
 					onClick={() => props.onForward()}
 				>
-					<AppIcon pack={props.iconPack} name="ChevronRight" size={18} />
+					<AppIcon pack={props.iconPack} name="ArrowRight" size={18} />
 				</button>
-				<nav class="breadcrumb" aria-label="Path">
-					<For each={breadcrumbs()}>
-						{(segment, i) => {
-							const [isOver, setIsOver] = createSignal(false);
-							return (
-								<>
-									{i() > 0 && <span class="crum-separator">/</span>}
-									<button
-										type="button"
-										class={`crum-segment ${i() === breadcrumbs().length - 1 ? "bold" : ""} ${isOver() ? "is-over" : ""}`}
-										onClick={() => props.onNavigate(segment.path)}
-										onDragOver={(e) => {
-											e.preventDefault();
-											setIsOver(true);
-										}}
-										onDragLeave={() => setIsOver(false)}
-										onDrop={async (e) => {
-											e.preventDefault();
-											setIsOver(false);
-											const data = e.dataTransfer?.getData("application/json") || undefined;
-											await dnd.handleDrop(segment.path, data);
-										}}
-										title={segment.path}
-									>
-										{segment.name}
-									</button>
-								</>
-							);
-						}}
-					</For>
+				<nav
+					class="breadcrumb"
+					aria-label="Path"
+					onClick={(e) => {
+						if (e.target === e.currentTarget) {
+							setIsEditingPath(true);
+							setPathInput(props.currentAbsolutePath);
+						}
+					}}
+				>
+					<Show
+						when={isEditingPath()}
+						fallback={
+							<For each={breadcrumbs()}>
+								{(segment, i) => {
+									const [isOver, setIsOver] = createSignal(false);
+									return (
+										<>
+											{i() > 0 && <span class="crum-separator">/</span>}
+											<button
+												type="button"
+												class={`crum-segment ${i() === breadcrumbs().length - 1 ? "bold" : ""} ${isOver() ? "is-over" : ""}`}
+												onClick={() => props.onNavigate(segment.path)}
+												onDragOver={(e) => {
+													e.preventDefault();
+													setIsOver(true);
+												}}
+												onDragLeave={() => setIsOver(false)}
+												onDrop={async (e) => {
+													e.preventDefault();
+													setIsOver(false);
+													const data =
+														e.dataTransfer?.getData("application/json") ||
+														undefined;
+													await dnd.handleDrop(segment.path, data);
+												}}
+												title={segment.path}
+											>
+												{segment.name}
+											</button>
+										</>
+									);
+								}}
+							</For>
+						}
+					>
+						<input
+							type="text"
+							class="path-input"
+							value={pathInput()}
+							onInput={(e) => setPathInput(e.currentTarget.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") {
+									props.onNavigate(pathInput());
+									setIsEditingPath(false);
+								} else if (e.key === "Escape") {
+									setIsEditingPath(false);
+								}
+							}}
+							onBlur={() => setIsEditingPath(false)}
+							ref={(el) => setTimeout(() => el.focus(), 0)}
+						/>
+					</Show>
 				</nav>
 			</div>
 
@@ -109,14 +145,8 @@ export default function Toolbar(props: ToolbarProps) {
 					>
 						<AppIcon
 							pack={props.iconPack}
-							name={props.sortOrder === "asc" ? "ChevronRight" : "ChevronLeft"}
+							name={props.sortOrder === "asc" ? "ArrowUp" : "ArrowDown"}
 							size={14}
-							style={{
-								transform:
-									props.sortOrder === "asc"
-										? "rotate(90deg)"
-										: "rotate(-90deg)",
-							}}
 						/>
 					</button>
 					<button
@@ -134,6 +164,7 @@ export default function Toolbar(props: ToolbarProps) {
 						type="button"
 						class={`toggle-btn ${props.viewMode === "list" ? "active" : ""}`}
 						onClick={() => props.setViewMode("list")}
+						title="List View"
 					>
 						<AppIcon pack={props.iconPack} name="List" size={18} />
 					</button>
@@ -141,8 +172,17 @@ export default function Toolbar(props: ToolbarProps) {
 						type="button"
 						class={`toggle-btn ${props.viewMode === "grid" ? "active" : ""}`}
 						onClick={() => props.setViewMode("grid")}
+						title="Grid View"
 					>
 						<AppIcon pack={props.iconPack} name="Grid" size={18} />
+					</button>
+					<button
+						type="button"
+						class={`toggle-btn ${props.viewMode === "column" ? "active" : ""}`}
+						onClick={() => props.setViewMode("column")}
+						title="Column View"
+					>
+						<AppIcon pack={props.iconPack} name="Columns" size={18} />
 					</button>
 				</div>
 

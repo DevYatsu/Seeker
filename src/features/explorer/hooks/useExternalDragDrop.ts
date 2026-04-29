@@ -8,25 +8,23 @@ interface DragDropOptions {
 }
 
 export function useExternalDragDrop(opts: DragDropOptions) {
-	onMount(async () => {
-		const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-			if (event.payload.type === "drop") {
-				const paths = event.payload.paths;
-				const targetDir = opts.currentPath();
+	const unlistenPromise = getCurrentWebview().onDragDropEvent((event) => {
+		if (event.payload.type === "drop") {
+			const paths = event.payload.paths;
+			const targetDir = opts.currentPath();
 
-				if (paths && paths.length > 0 && targetDir) {
-					fileSystem
-						.copyItems(paths, targetDir)
-						.then(opts.onSuccess)
-						.catch((err) => {
-							console.error("External drop failed:", err);
-						});
-				}
+			if (paths && paths.length > 0 && targetDir) {
+				fileSystem
+					.copyItems(paths, targetDir)
+					.then(opts.onSuccess)
+					.catch((err) => {
+						console.error("External drop failed:", err);
+					});
 			}
-		});
+		}
+	});
 
-		onCleanup(() => {
-			unlisten();
-		});
+	onCleanup(() => {
+		unlistenPromise.then((f) => f());
 	});
 }

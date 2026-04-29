@@ -1,4 +1,5 @@
-import { createSignal, type Accessor } from "solid-js";
+// src/features/explorer/modules/FileSystemManager.ts
+import { createSignal, createSelector } from "solid-js";
 import { fileSystem } from "../../../services/apiService";
 import type { FileItem } from "../../../utils/mockData";
 
@@ -14,7 +15,10 @@ export type FileOperation =
 	| { type: "delete"; ids: string[]; permanent: boolean; sourceDirId?: string }
 	| { type: "createFolder"; parentPath: string; name: string }
 	| { type: "createFile"; parentPath: string; name: string }
-	| { type: "duplicate"; ids: string[] };
+	| { type: "duplicate"; ids: string[] }
+	| { type: "batchRename"; items: { id: string; newName: string }[] }
+	| { type: "compress"; sources: string[]; outputPath: string }
+	| { type: "extract"; path: string; targetDir: string };
 
 export interface FileSystemConfig {
 	refresh: () => void;
@@ -27,16 +31,13 @@ export interface FileSystemConfig {
 
 /**
  * FileSystem Transaction Module
- *
- * Depth: High. Orchestrates API calls, optimistic UI updates, and refresh cycles.
- * Leverage: Callers use a single 'execute' method. Implementation handles the complexity of state sync.
- * Locality: All filesystem mutation logic and clipboard state live here.
  */
 export function createFileSystemManager(config: FileSystemConfig) {
 	const [clipboard, setClipboard] = createSignal<string[]>([]);
 	const [clipboardMode, setClipboardMode] = createSignal<"copy" | "cut">(
 		"copy",
 	);
+	const isClipboardItem = createSelector(clipboard);
 
 	const calculateInverse = (op: FileOperation): FileOperation | null => {
 		switch (op.type) {
@@ -44,7 +45,7 @@ export function createFileSystemManager(config: FileSystemConfig) {
 				if (!op.oldName) return null;
 				return {
 					type: "rename",
-					id: op.id.replace(op.newName, op.oldName), // approximation
+					id: op.id.replace(op.newName, op.oldName),
 					newName: op.oldName,
 					oldName: op.newName,
 				};
@@ -63,11 +64,9 @@ export function createFileSystemManager(config: FileSystemConfig) {
 
 	const execute = async (op: FileOperation, isUndoRedo = false) => {
 		return config.runTask(`${op.type} operation`, async () => {
-			// 1. Optimistic Update
 			applyOptimistic(op);
 
 			try {
-				// 2. API Call
 				switch (op.type) {
 					case "rename":
 						await fileSystem.renameItem(op.id, op.newName);
@@ -94,9 +93,19 @@ export function createFileSystemManager(config: FileSystemConfig) {
 					case "duplicate":
 						await fileSystem.duplicateItems(op.ids);
 						break;
+					case "batchRename":
+						for (const item of op.items) {
+							await fileSystem.renameItem(item.id, item.newName);
+						}
+						break;
+					case "compress":
+						await fileSystem.compressItems(op.sources, op.outputPath);
+						break;
+					case "extract":
+						await fileSystem.extractArchive(op.path, op.targetDir);
+						break;
 				}
 
-				// 3. Report for Undo
 				if (!isUndoRedo && config.onExecuted) {
 					const inverse = calculateInverse(op);
 					if (inverse) config.onExecuted(op, inverse);
@@ -105,7 +114,6 @@ export function createFileSystemManager(config: FileSystemConfig) {
 				console.error(`Operation ${op.type} failed:`, err);
 				throw err;
 			} finally {
-				// 4. Final Sync (Revalidate)
 				config.refresh();
 			}
 		});
@@ -114,12 +122,17 @@ export function createFileSystemManager(config: FileSystemConfig) {
 	const applyOptimistic = (op: FileOperation) => {
 		config.mutate((prev) => {
 			if (!prev) return prev;
-
 			switch (op.type) {
 				case "rename":
 					return prev.map((f) =>
 						f.id === op.id ? { ...f, name: op.newName } : f,
 					);
+				case "batchRename": {
+					const map = new Map(op.items.map((i) => [i.id, i.newName]));
+					return prev.map((f) =>
+						map.has(f.id) ? { ...f, name: map.get(f.id)! } : f,
+					);
+				}
 				case "delete":
 					return prev.filter((f) => !op.ids.includes(f.id));
 				case "move":
@@ -147,17 +160,25 @@ export function createFileSystemManager(config: FileSystemConfig) {
 		if (items.length === 0) return;
 
 		if (clipboardMode() === "cut") {
-			await execute({ type: "move", sourceIds: items, targetDirId: targetPath });
+			await execute({
+				type: "move",
+				sourceIds: items,
+				targetDirId: targetPath,
+			});
 			setClipboard([]);
 		} else {
-			await execute({ type: "copy", sourceIds: items, targetDirId: targetPath });
+			await execute({
+				type: "copy",
+				sourceIds: items,
+				targetDirId: targetPath,
+			});
 		}
 	};
-
 
 	return {
 		execute,
 		clipboard,
+		isClipboardItem,
 		clipboardMode,
 		copy,
 		cut,

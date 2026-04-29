@@ -1,12 +1,7 @@
+// src/features/explorer/modules/NavigationManager.ts
 import { makePersisted } from "@solid-primitives/storage";
-import {
-	batch,
-	createMemo,
-	createResource,
-	createSignal,
-	useTransition,
-	type Accessor,
-} from "solid-js";
+import { batch, createMemo, createResource, createSignal } from "solid-js";
+import { createStore, produce } from "solid-js/store";
 import { fileSystem } from "../../../services/apiService";
 
 export interface TabHistory {
@@ -19,39 +14,53 @@ function generateTabId() {
 	return Math.random().toString(36).substring(2, 9);
 }
 
-const STORAGE_KEY = "seeker-nav-tabs";
+const BASE_STORAGE_KEY = "seeker-nav-tabs";
 
 /**
  * Explorer Orchestrator Module (NavigationManager)
- *
- * Depth: High. Unifies tab management, history, and path resolution.
- * Leverage: Single module for all navigation needs. Handles persistence and async resolution.
- * Locality: All logic for path labels, trash detection, and tab lifecycle lives here.
  */
 export function createNavigationManager() {
-	const [isPending, startTransition] = useTransition();
+	// 0. Detect Window and Initial Path
+	const params = new URLSearchParams(window.location.search);
+	const initialPath = params.get("path");
+	const windowLabel =
+		(window as any).__TAURI_INTERNALS__?.metadata?.windowLabel || "main";
+	const storageKey = `${BASE_STORAGE_KEY}-${windowLabel}`;
 
 	// 1. Raw Tab State
+	const defaultTabs: TabHistory[] = initialPath
+		? [{ id: generateTabId(), history: [initialPath], index: 0 }]
+		: [{ id: generateTabId(), history: ["home"], index: 0 }];
+
 	const [tabs, setTabs] = makePersisted(
-		createSignal<TabHistory[]>([
-			{ id: generateTabId(), history: ["home"], index: 0 },
-		]),
-		{ name: STORAGE_KEY },
+		createStore<TabHistory[]>(defaultTabs),
+		{ name: storageKey },
 	);
 
 	const [activeTabIndex, setActiveTabIndex] = makePersisted(createSignal(0), {
-		name: `${STORAGE_KEY}-index`,
+		name: `${storageKey}-index`,
 	});
+
+	// If initialPath was provided, force navigation for the active tab if it's the first run
+	if (
+		initialPath &&
+		tabs.length === 1 &&
+		tabs[0].history.length === 1 &&
+		tabs[0].history[0] === "home"
+	) {
+		setTabs(0, "history", [initialPath]);
+	}
 
 	// 2. Async Locations (Bookmarks/Drives)
 	const [locations] = createResource(() => fileSystem.getUserLocations());
+	const [storage] = createResource(() => fileSystem.getStorageStats());
 
 	// 3. Derived State
 	const activeTab = createMemo(() => {
-		const currentTabs = tabs() || [];
 		const index = activeTabIndex();
-		const fallback = { id: "default", history: ["home"], index: 0 };
-		return currentTabs[index] || currentTabs[0] || fallback;
+		return (
+			tabs[index] || tabs[0] || { id: "default", history: ["home"], index: 0 }
+		);
 	});
 
 	const currentPath = createMemo(() => {
@@ -60,10 +69,17 @@ export function createNavigationManager() {
 	});
 
 	const currentAbsolutePath = createMemo(() => {
-		const locs = locations() || [];
+		const locs = locations();
 		const path = currentPath();
-		const loc = locs.find((l) => l.id === path);
-		return loc ? loc.path : path;
+
+		// Symbolic ID (no path separator) — needs location mapping
+		if (!path.includes("/") && !path.includes("\\")) {
+			if (!locs) return ""; // locations still loading — return empty string, not null
+			const loc = locs.find((l) => l.id === path);
+			return loc ? loc.path : path;
+		}
+
+		return path;
 	});
 
 	const canGoBack = createMemo(() => activeTab().index > 0);
@@ -72,100 +88,59 @@ export function createNavigationManager() {
 		return tab.index < tab.history.length - 1;
 	});
 
-	const isTrash = createMemo(() => {
-		const locs = locations() || [];
-		const loc = locs.find((l) => l.id === "trash");
-		const path = currentPath();
-		return loc ? path === loc.id || path === loc.path : false;
-	});
-
 	// 4. Methods
 	const navigate = (path: string) => {
 		if (path === currentPath()) return;
 
-		setTabs((prev) => {
-			const current = Array.isArray(prev) && prev.length > 0 ? prev : [{ id: generateTabId(), history: ["home"], index: 0 }];
-			const newTabs = [...current];
-			let index = activeTabIndex();
-			if (index < 0 || index >= newTabs.length) index = 0;
-
-			const tab = newTabs[index];
-			const nextHistory = tab.history.slice(0, tab.index + 1);
-
-			newTabs[index] = {
-				...tab,
-				history: [...nextHistory, path],
-				index: nextHistory.length,
-			};
-			return newTabs;
-		});
+		setTabs(
+			activeTabIndex(),
+			produce((tab) => {
+				tab.history = [...tab.history.slice(0, tab.index + 1), path];
+				tab.index = tab.history.length - 1;
+			}),
+		);
 	};
 
 	const goBack = () => {
 		if (canGoBack()) {
-			setTabs((prev) => {
-				const current = Array.isArray(prev) ? prev : [];
-				const newTabs = [...current];
-				const tab = newTabs[activeTabIndex()];
-				if (!tab) return current;
-				newTabs[activeTabIndex()] = { ...tab, index: tab.index - 1 };
-				return newTabs;
-			});
+			setTabs(activeTabIndex(), "index", (i) => i - 1);
 		}
 	};
 
 	const goForward = () => {
 		if (canGoForward()) {
-			setTabs((prev) => {
-				const current = Array.isArray(prev) ? prev : [];
-				const newTabs = [...current];
-				const tab = newTabs[activeTabIndex()];
-				if (!tab) return current;
-				newTabs[activeTabIndex()] = { ...tab, index: tab.index + 1 };
-				return newTabs;
-			});
+			setTabs(activeTabIndex(), "index", (i) => i + 1);
 		}
 	};
 
 	const addTab = (path: string = currentPath()) => {
 		batch(() => {
-			let nextIndex = 0;
-			setTabs((prev) => {
-				const current = Array.isArray(prev) ? prev : [];
-				const next = [
-					...current,
-					{ id: generateTabId(), history: [path], index: 0 },
-				];
-				nextIndex = next.length - 1;
-				return next;
-			});
-			setActiveTabIndex(nextIndex);
+			const newId = generateTabId();
+			setTabs(tabs.length, { id: newId, history: [path], index: 0 });
+			setActiveTabIndex(tabs.length - 1);
 		});
 	};
 
 	const closeTab = (index: number) => {
+		if (tabs.length <= 1) return;
 		batch(() => {
-			const currentTabs = tabs() || [];
-			if (currentTabs.length <= 1) return;
-
-			const newTabs = currentTabs.filter((_, i) => i !== index);
-			setTabs(newTabs);
-
-			// Adjust active index
+			setTabs((prev) => prev.filter((_, i) => i !== index));
 			const currentIndex = activeTabIndex();
 			if (currentIndex >= index) {
-				const nextIndex = Math.max(0, currentIndex - 1);
-				setActiveTabIndex(nextIndex);
+				setActiveTabIndex(Math.max(0, currentIndex - 1));
 			}
 		});
 	};
 
 	const moveTab = (fromIndex: number, toIndex: number) => {
 		batch(() => {
-			const newTabs = [...tabs()];
-			const [moved] = newTabs.splice(fromIndex, 1);
-			newTabs.splice(toIndex, 0, moved);
-			setTabs(newTabs);
+			const tabToMove = { ...tabs[fromIndex] };
+			setTabs(
+				produce((state) => {
+					state.splice(fromIndex, 1);
+					state.splice(toIndex, 0, tabToMove);
+				}),
+			);
 
 			if (activeTabIndex() === fromIndex) {
 				setActiveTabIndex(toIndex);
@@ -178,8 +153,20 @@ export function createNavigationManager() {
 	};
 
 	const getLabel = (path: string) => {
+		if (!path) return ""; // handles the "" loading state
 		const locs = locations() || [];
-		const bestLoc = locs
+		const disks = storage()?.disks || [];
+
+		const allLocs = [
+			...locs,
+			...disks.map((d) => ({
+				id: d.mount_point,
+				path: d.mount_point,
+				label: d.name || (d.mount_point === "/" ? "Root" : d.mount_point),
+			})),
+		];
+
+		const bestLoc = allLocs
 			.filter((l) => path.startsWith(l.path))
 			.sort((a, b) => b.path.length - a.path.length)[0];
 
@@ -202,18 +189,23 @@ export function createNavigationManager() {
 
 	const activeLocationLabel = createMemo(() => getLabel(currentAbsolutePath()));
 
+	const isTrash = createMemo(() => {
+		const path = currentPath();
+		return path === "trash" || path.startsWith("trash/");
+	});
+
 	return {
 		// State
-		tabs,
+		tabs: () => tabs,
 		activeTabIndex,
 		currentPath,
 		currentAbsolutePath,
 		canGoBack,
 		canGoForward,
-		isPending,
-		isTrash,
 		locations,
+		storage,
 		activeLocationLabel,
+		isTrash,
 
 		// Actions
 		navigate,

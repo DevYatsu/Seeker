@@ -1,3 +1,4 @@
+// src/views/Explorer.tsx
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
 	createEffect,
@@ -10,7 +11,6 @@ import {
 // Layout Components
 import ContextMenu from "../components/ContextMenu";
 import LoadingOverlay from "../components/LoadingOverlay";
-import TitleBar from "../components/TitleBar";
 import {
 	ExplorerModals,
 	type InfoModal,
@@ -25,6 +25,11 @@ import Toolbar from "../features/explorer/components/Toolbar";
 import TaskDrawer from "../features/explorer/components/TaskDrawer";
 
 // Logic Hooks & Context
+import { MenuBar } from "../features/explorer/components/MenuBar";
+import { useMenuBarMenus } from "../features/explorer/hooks/useMenuBarMenus";
+import { useNativeMenuListener } from "../features/explorer/hooks/useNativeMenuListener";
+import { useCommandPalette } from "../features/explorer/hooks/useCommandPalette";
+
 import { ExplorerProvider } from "../features/explorer/context/ExplorerContext";
 import { useDirectoryWatcher } from "../features/explorer/hooks/useDirectoryWatcher";
 import { useExplorerContextMenu } from "../features/explorer/hooks/useExplorerContextMenu";
@@ -39,31 +44,33 @@ import { createResourceManager } from "../features/explorer/modules/ResourceMana
 import { createSelectionManager } from "../features/explorer/modules/SelectionManager";
 import { createTaskManager } from "../features/explorer/modules/TaskManager";
 import { createUndoManager } from "../features/explorer/modules/UndoManager";
-// Global Hooks & Services
+import { createResizeObserver } from "@solid-primitives/resize-observer";
 import { useContextMenu } from "../hooks/useContextMenu";
 import { useSettings } from "../hooks/useSettings";
 import { fileSystem } from "../services/apiService";
-import { getGridColumns } from "../utils/ui";
+import { BatchRenameConfig } from "../features/explorer/components/BatchRenameModal";
 
-/**
- * Explorer Page
- * Smart Container orchestrating specialized logic.
- * Adheres to Separation of Concerns, KISS, and DRY.
- */
-export default function Explorer() {
-	// --- 1. State Orchestration ---
+const MIN_GRID_ITEM_WIDTH = 120;
+
+function createExplorerState() {
 	const { iconPack, addFavorite } = useSettings();
 	const contextMenu = useContextMenu();
 	const nav = createNavigationManager();
 	const folderSizes = useFolderSizes();
 	const resources = createResourceManager({
 		currentPath: nav.currentAbsolutePath,
+		folderSizes: folderSizes.sizes,
+	});
+	const [gridWidth, setGridWidth] = createSignal(0);
+	const gridColumns = createMemo(() => {
+		if (resources.viewMode() === "list") return 1;
+		return Math.floor(gridWidth() / MIN_GRID_ITEM_WIDTH) || 1;
 	});
 
 	const selection = createSelectionManager({
 		files: resources.items,
 		viewMode: resources.viewMode,
-		gridColumns: () => getGridColumns(".folder-grid, .file-grid"),
+		gridColumns,
 	});
 	const tasks = createTaskManager();
 	const ops = createFileSystemManager({
@@ -83,18 +90,38 @@ export default function Explorer() {
 		null,
 	);
 	const [infoModal, setInfoModal] = createSignal<InfoModal | null>(null);
-	const [quickLookId, setQuickLookId] = createSignal<string | null>(null);
+	const [batchRenameConfig, setBatchRenameConfig] =
+		createSignal<BatchRenameConfig | null>(null);
+	const [quickLookIds, setQuickLookIds] = createSignal<string[] | null>(null);
+	const [isPaletteOpen, setIsPaletteOpen] = createSignal(false);
 
-	const quickLookFile = createMemo(() => {
-		const id = quickLookId();
-		return id ? resources.items().find((f) => f.id === id) || null : null;
-	});
+	const handleQuickLook = async (ids: string[] | null) => {
+		if (!ids || ids.length === 0) {
+			setQuickLookIds(null);
+			return;
+		}
 
-	// --- 2. Action Handlers ---
-	const { handleItemInteract } = useExplorerInteraction({
-		selection,
-		contextMenu,
-	});
+		setQuickLookIds(ids);
+
+		try {
+			const winLabel = `quicklook-${crypto.randomUUID()}`;
+			const win = new WebviewWindow(winLabel, {
+				url: `/?window=quicklook&ids=${encodeURIComponent(ids.join(","))}`,
+				title: "Quick Look",
+				width: 900,
+				height: 700,
+				decorations: false,
+				transparent: true,
+				shadow: true,
+			});
+			await win.onCloseRequested(() => {
+				setQuickLookIds(null);
+			});
+			await win.setFocus();
+		} catch (e) {
+			console.error("Failed to open Quick Look window", e);
+		}
+	};
 
 	const handleOpen = async (id: string) => {
 		const file = resources.items().find((f) => f.id === id);
@@ -120,21 +147,21 @@ export default function Explorer() {
 		}
 	};
 
-	// --- 3. Composite State (Context Value) ---
-	const explorerContextValue = {
+	const { handleItemInteract } = useExplorerInteraction({
 		selection,
-		ops,
-		nav,
-		resources,
-		undo,
-		dnd,
-		tasks,
-		iconPack,
-		folderSizes,
-		handlers: { onOpen: handleOpen },
+		contextMenu,
+	});
+
+	const handleBackgroundInteract = (e: MouseEvent) => {
+		if (e.type === "contextmenu") {
+			selection.clear();
+			contextMenu.open(e);
+		} else if (e.type === "click") {
+			selection.clear();
+			contextMenu.close();
+		}
 	};
 
-	// --- 4. Logic Orchestration Hooks ---
 	const menuItems = useExplorerContextMenu({
 		selection,
 		ops,
@@ -144,6 +171,7 @@ export default function Explorer() {
 			onOpen: handleOpen,
 			setPromptConfig,
 			setInfoModal,
+			setBatchRenameConfig,
 			openInTerminal: fileSystem.openInTerminal,
 			addFavorite,
 		},
@@ -157,8 +185,9 @@ export default function Explorer() {
 		undo,
 		handlers: {
 			handleOpen,
-			setQuickLookFileId: setQuickLookId,
-			quickLookFileId: quickLookId,
+			setQuickLookFileId: handleQuickLook,
+			quickLookFileId: quickLookIds,
+			setIsPaletteOpen,
 		},
 	});
 
@@ -177,107 +206,209 @@ export default function Explorer() {
 		selection.clear();
 		resources.setSearchQuery("");
 		folderSizes.clearCache();
-		setQuickLookId(null);
+		setQuickLookIds(null);
 	});
 
-	// --- 5. Render ---
-	return (
-		<ExplorerProvider value={explorerContextValue}>
-			<div class="root-view" classList={{ "is-navigating": nav.isPending() }}>
-				<TitleBar />
+	const menuBarMenus = useMenuBarMenus({
+		selection,
+		ops,
+		nav,
+		resources,
+		undo,
+		handlers: {
+			setPromptConfig,
+			setBatchRenameConfig,
+		},
+	});
 
+	useNativeMenuListener({
+		selection,
+		ops,
+		nav,
+		resources,
+		undo,
+		handlers: {
+			setPromptConfig,
+		},
+	});
+
+	const paletteCommands = useCommandPalette({
+		selection,
+		items: resources.items,
+		ops,
+		nav,
+		resources,
+		undo,
+		handlers: {
+			setPromptConfig,
+			setInfoModal,
+			setBatchRenameConfig,
+		},
+	});
+
+	return {
+		selection,
+		ops,
+		nav,
+		resources,
+		undo,
+		dnd,
+		tasks,
+		iconPack,
+		folderSizes,
+		fetchMetadata: resources.fetchMetadata,
+		contextMenu,
+		promptConfig,
+		setPromptConfig,
+		infoModal,
+		setInfoModal,
+		batchRenameConfig,
+		setBatchRenameConfig,
+		isPaletteOpen,
+		setIsPaletteOpen,
+		paletteCommands,
+		quickLookIds,
+		setQuickLookIds,
+		menuItems,
+		menuBarMenus,
+		handleItemInteract,
+		setGridWidth,
+		handlers: { onOpen: handleOpen },
+		handleBackgroundInteract,
+	};
+}
+
+/**
+ * Explorer Page
+ * Smart Container orchestrating specialized logic.
+ * Adheres to Separation of Concerns, KISS, and DRY.
+ */
+export default function Explorer() {
+	const state = createExplorerState();
+	let browserRef: HTMLDivElement | undefined;
+
+	createResizeObserver(
+		() => browserRef,
+		({ width }) => state.setGridWidth(width),
+	);
+
+	return (
+		<ExplorerProvider value={state}>
+			<div class="root-view">
+				<MenuBar menus={state.menuBarMenus()} iconPack={state.iconPack()} />
 				<div class="app-container">
 					<Sidebar
-						activeLocation={nav.currentPath()}
-						setActiveLocation={nav.navigate}
-						locations={nav.locations() || []}
+						activeLocation={state.nav.currentPath()}
+						setActiveLocation={state.nav.navigate}
+						locations={state.nav.locations() || []}
+						storage={state.nav.storage()}
 						onMove={(sourceIds, targetId) =>
-							ops.execute({ type: "move", sourceIds, targetDirId: targetId })
+							state.ops.execute({
+								type: "move",
+								sourceIds,
+								targetDirId: targetId,
+							})
 						}
 					/>
 
 					<main class="main-content">
 						<TabBar
-							tabs={nav.tabs()}
-							activeIndex={nav.activeTabIndex()}
-							onSelect={nav.setActiveTab}
-							onClose={nav.closeTab}
-							onAdd={() => nav.addTab()}
-							onMove={nav.moveTab}
-							iconPack={iconPack()}
-							getPathLabel={nav.getLabel}
+							tabs={state.nav.tabs()}
+							activeIndex={state.nav.activeTabIndex()}
+							onSelect={state.nav.setActiveTab}
+							onClose={state.nav.closeTab}
+							onAdd={() => state.nav.addTab()}
+							onMove={state.nav.moveTab}
+							iconPack={state.iconPack()}
+							getPathLabel={state.nav.getLabel}
 						/>
 
 						<Toolbar
-							activeLocation={nav.currentPath()}
-							activeLocationLabel={nav.activeLocationLabel()}
-							currentAbsolutePath={nav.currentAbsolutePath()}
-							onNavigate={nav.navigate}
-							viewMode={resources.viewMode()}
-							setViewMode={resources.setViewMode}
-							searchQuery={resources.searchQuery()}
-							setSearchQuery={resources.setSearchQuery}
-							iconPack={iconPack()}
-							canGoBack={nav.canGoBack()}
-							canGoForward={nav.canGoForward()}
-							onBack={nav.goBack}
-							onForward={nav.goForward}
-							sortBy={resources.sortBy()}
-							setSortBy={resources.setSortBy}
-							sortOrder={resources.sortOrder()}
-							setSortOrder={resources.setSortOrder}
-							separateFolders={resources.separateFolders()}
-							setSeparateFolders={resources.setSeparateFolders}
-							showHidden={resources.showHidden()}
-							setShowHidden={resources.setShowHidden}
+							activeLocation={state.nav.currentPath()}
+							activeLocationLabel={state.nav.activeLocationLabel()}
+							currentAbsolutePath={state.nav.currentAbsolutePath()}
+							onNavigate={state.nav.navigate}
+							viewMode={state.resources.viewMode()}
+							setViewMode={state.resources.setViewMode}
+							searchQuery={state.resources.searchQuery()}
+							setSearchQuery={state.resources.setSearchQuery}
+							iconPack={state.iconPack()}
+							canGoBack={state.nav.canGoBack()}
+							canGoForward={state.nav.canGoForward()}
+							onBack={state.nav.goBack}
+							onForward={state.nav.goForward}
+							sortBy={state.resources.sortBy()}
+							setSortBy={state.resources.setSortBy}
+							sortOrder={state.resources.sortOrder()}
+							setSortOrder={state.resources.setSortOrder}
+							separateFolders={state.resources.separateFolders()}
+							setSeparateFolders={state.resources.setSeparateFolders}
+							showHidden={state.resources.showHidden()}
+							setShowHidden={state.resources.setShowHidden}
 						/>
 
-						<div class="browser-wrapper">
-							<Suspense fallback={<LoadingOverlay active={true} />}>
-								<FileBrowser
-									files={resources.items()}
-									viewMode={resources.viewMode()}
-									onItemInteract={handleItemInteract}
-									onBackgroundInteract={() => selection.clear()}
-								/>
-							</Suspense>
-
-							<LoadingOverlay active={nav.isPending() || resources.isLoading()} />
+						<div class="browser-wrapper" ref={browserRef}>
+							<FileBrowser
+								files={state.resources.items()}
+								viewMode={state.resources.viewMode()}
+								onItemInteract={state.handleItemInteract}
+								onBackgroundInteract={state.handleBackgroundInteract}
+								onNavigate={state.nav.navigate}
+								iconPack={state.iconPack}
+							/>
 						</div>
 
 						<StatusBar
-							itemCount={resources.items().length}
-							selectionCount={selection.selectedIds().length}
+							itemCount={state.resources.items().length}
+							selectionCount={state.selection.selectedIds().length}
+							selectedSize={state.selection.selectedIds().reduce((acc, id) => {
+								const item = state.resources.items().find((f) => f.id === id);
+								if (!item) return acc;
+								const itemSize =
+									item.type === "folder"
+										? state.folderSizes.sizes()[id] || 0
+										: item.size;
+								return acc + itemSize;
+							}, 0)}
+							fileCount={state.resources
+								.items()
+								.reduce(
+									(count, f) => (f.type === "file" ? count + 1 : count),
+									0,
+								)}
+							folderCount={state.resources
+								.items()
+								.reduce(
+									(count, f) => (f.type === "folder" ? count + 1 : count),
+									0,
+								)}
+							searchQuery={state.resources.searchQuery()}
 						/>
 					</main>
 				</div>
 
 				<ExplorerModals
-					infoModal={infoModal()}
-					setInfoModal={setInfoModal}
-					promptConfig={promptConfig()}
-					setPromptConfig={setPromptConfig}
-					iconPack={iconPack()}
+					infoModal={state.infoModal()}
+					setInfoModal={state.setInfoModal}
+					promptConfig={state.promptConfig()}
+					setPromptConfig={state.setPromptConfig}
+					batchRenameConfig={state.batchRenameConfig()}
+					setBatchRenameConfig={state.setBatchRenameConfig}
+					isPaletteOpen={state.isPaletteOpen()}
+					setIsPaletteOpen={state.setIsPaletteOpen}
+					paletteCommands={state.paletteCommands()}
+					iconPack={state.iconPack()}
 				/>
 
 				<ContextMenu
-					x={contextMenu.pos().x}
-					y={contextMenu.pos().y}
-					visible={contextMenu.visible()}
-					onClose={contextMenu.close}
-					items={menuItems()}
-					iconPack={iconPack()}
+					x={state.contextMenu.pos().x}
+					y={state.contextMenu.pos().y}
+					visible={state.contextMenu.visible()}
+					onClose={state.contextMenu.close}
+					items={state.menuItems()}
+					iconPack={state.iconPack()}
 				/>
 
-				<Show when={quickLookFile()}>
-					{(file) => (
-						<QuickLook
-							file={file()}
-							onClose={() => setQuickLookId(null)}
-							iconPack={iconPack()}
-						/>
-					)}
-				</Show>
 				<TaskDrawer />
 			</div>
 		</ExplorerProvider>

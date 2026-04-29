@@ -12,7 +12,7 @@ import type { FileItem } from "../../../utils/mockData";
 
 export type SortBy = "name" | "size" | "date";
 export type SortOrder = "asc" | "desc";
-export type ViewMode = "list" | "grid";
+export type ViewMode = "list" | "grid" | "column";
 
 const storageOptions = {
 	deserialize: (v: string) => {
@@ -31,7 +31,10 @@ const storageOptions = {
  * Leverage: Provides a single source of truth for "what files are we looking at and how".
  * Locality: Concentrates all filtering, sorting, and API resource management.
  */
-export function createResourceManager(config: { currentPath: Accessor<string> }) {
+export function createResourceManager(config: {
+	currentPath: Accessor<string>;
+	folderSizes: Accessor<Record<string, number>>;
+}) {
 	// 1. Persistent View Settings
 	const [viewMode, setViewMode] = makePersisted(
 		createSignal<ViewMode>("list"),
@@ -76,21 +79,43 @@ export function createResourceManager(config: { currentPath: Accessor<string> })
 		id: r.path,
 		name: r.name,
 		type: r.is_dir ? "folder" : "file",
-		size: r.size,
-		updatedAt: new Date(r.updated_at * 1000).toISOString(),
+		size: r.size ?? undefined,
+		updatedAt: r.updated_at ? r.updated_at * 1000 : undefined,
 		ext: getFileExtension(r.name) || "--",
 	});
 
 	const [currentFiles, { mutate }] = createResource(
-		() => ({
-			path: config.currentPath(),
-			trigger: refreshTrigger(),
-			showHidden: showHidden(),
-		}),
-		async ({ path, showHidden }) => {
-			if (!path) return [];
-			const results = await fileSystem.listDirectory(path, showHidden);
-			return results.map(mapFile);
+		() => {
+			const path = config.currentPath();
+			if (!path) return false as const;
+			return {
+				path,
+				trigger: refreshTrigger(),
+				showHidden: showHidden(),
+				sortBy: sortBy(),
+				sortOrder: sortOrder(),
+				search: searchQuery(),
+			};
+		},
+		async (source) => {
+			try {
+				console.log(`[ResourceManager] Fetching: ${source.path}`);
+				const [results, count] = await fileSystem.listDirectory(source.path, {
+					show_hidden: source.showHidden,
+					sort_by: source.sortBy,
+					sort_order: source.sortOrder,
+					search: source.search || undefined,
+					limit: 1000, // Load first 1000 for now to keep memory low
+				});
+				const mapped = results.map(mapFile);
+				console.log(
+					`[ResourceManager] Fetched ${mapped.length}/${count} items`,
+				);
+				return mapped;
+			} catch (err) {
+				console.error("[ResourceManager] Error fetching directory:", err);
+				return [];
+			}
 		},
 	);
 
@@ -110,26 +135,37 @@ export function createResourceManager(config: { currentPath: Accessor<string> })
 				? searchResults() || []
 				: currentFiles() || [];
 
-		return [...files].sort((a, b) => {
-			if (separateFolders() && a.type !== b.type) {
-				return a.type === "folder" ? -1 : 1;
-			}
-			let comparison = 0;
-			switch (sortBy()) {
-				case "name":
-					comparison = a.name.localeCompare(b.name);
-					break;
-				case "size":
-					comparison = a.size - b.size;
-					break;
-				case "date":
-					comparison =
-						new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
-					break;
-			}
-			return sortOrder() === "asc" ? comparison : -comparison;
-		});
+		return files;
 	});
+
+	const fetchMetadata = async (ids: string[]) => {
+		if (ids.length === 0) return;
+		try {
+			const metadata = await fileSystem.getItemsMetadata(ids);
+			console.log(
+				`[ResourceManager] Hydrating ${metadata.length} items metadata`,
+			);
+			mutate((prev) => {
+				if (!prev) return prev;
+				const next = [...prev];
+				const metadataMap = new Map(metadata.map((m) => [m.path, m]));
+
+				for (let i = 0; i < next.length; i++) {
+					const m = metadataMap.get(next[i].id);
+					if (m) {
+						next[i] = { ...next[i], ...mapFile(m) };
+					}
+				}
+				console.log(
+					`[ResourceManager] After hydration: ${next.length} items`,
+					next.slice(0, 3),
+				);
+				return next;
+			});
+		} catch (e) {
+			console.error("Hydration failed", e);
+		}
+	};
 
 	return {
 		// Data
@@ -137,6 +173,7 @@ export function createResourceManager(config: { currentPath: Accessor<string> })
 		isLoading: () => currentFiles.loading || searchResults.loading,
 		mutate,
 		refresh,
+		fetchMetadata,
 
 		// Options/Settings
 		viewMode,

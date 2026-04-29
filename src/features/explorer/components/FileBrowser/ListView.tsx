@@ -1,8 +1,10 @@
-import { For, Show } from "solid-js";
+// src/features/explorer/components/FileBrowser/ListView.tsx
+import { createEffect, For, Show } from "solid-js";
 import { formatDate, formatSize } from "../../../../utils/formatters";
 import type { FileItem } from "../../../../utils/mockData";
 import { useFileItem } from "../../hooks/useFileItem";
 import { FileIcon } from "./FileIcon";
+import { useExplorer } from "../../context/ExplorerContext";
 
 type ListViewProps = {
 	files: FileItem[];
@@ -45,6 +47,7 @@ const Row = (props: {
 			<span class="col-name">
 				<span class={`file-icon-wrapper ${props.file.type}`}>
 					<FileIcon
+						id={props.file.id}
 						type={props.file.type}
 						name={props.file.name}
 						pack={iconPack()}
@@ -62,14 +65,19 @@ const Row = (props: {
 					<Show
 						when={size() !== undefined}
 						fallback={
-							<button
-								type="button"
-								class="calc-size-btn"
-								onClick={onCalculateSize}
-								disabled={isCalculating()}
+							<Show
+								when={props.file.name.toLowerCase().endsWith(".app")}
+								fallback="--"
 							>
-								{isCalculating() ? "..." : "--"}
-							</button>
+								<button
+									type="button"
+									class="calc-size-btn"
+									onClick={onCalculateSize}
+									disabled={isCalculating()}
+								>
+									{isCalculating() ? "..." : "--"}
+								</button>
+							</Show>
 						}
 					>
 						{formatSize(size() || 0)}
@@ -86,6 +94,21 @@ const Row = (props: {
 };
 
 export const ListView = (props: ListViewProps) => {
+	const { fetchMetadata } = useExplorer();
+
+	// Hydration: fetch metadata for the first batch
+	createEffect(() => {
+		const idsToFetch = props.files
+			.filter((f) => f.size === undefined || f.updatedAt === undefined)
+			.slice(0, 50)
+			.map((f) => f.id);
+
+		if (idsToFetch.length > 0) {
+			const timer = setTimeout(() => fetchMetadata(idsToFetch), 100);
+			return () => clearTimeout(timer);
+		}
+	});
+
 	return (
 		<div class="list-view">
 			<div class="list-header">
@@ -94,7 +117,10 @@ export const ListView = (props: ListViewProps) => {
 				<span class="col-size">Size</span>
 				<span class="col-kind">Kind</span>
 			</div>
-			<div class="list-body">
+			<div
+				class="list-body"
+				style={{ overflow: "auto", flex: "1", "min-height": "0" }}
+			>
 				<For each={props.files}>
 					{(file) => <Row file={file} onInteract={props.onItemInteract} />}
 				</For>

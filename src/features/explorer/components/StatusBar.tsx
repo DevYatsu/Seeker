@@ -5,6 +5,10 @@ import { formatBytes } from "../../../utils/formatters";
 type StatusBarProps = {
 	itemCount: number;
 	selectionCount: number;
+	selectedSize: number;
+	fileCount: number;
+	folderCount: number;
+	searchQuery?: string;
 };
 
 export default function StatusBar(props: StatusBarProps) {
@@ -19,11 +23,21 @@ export default function StatusBar(props: StatusBarProps) {
 	return (
 		<footer class="status-bar">
 			<div class="status-left">
-				<span class="status-item">{props.itemCount} items</span>
+				<Show when={props.searchQuery}>
+					<span class="status-item search-status">
+						Searching... {props.itemCount}{" "}
+						{props.itemCount === 1 ? "result" : "results"} found
+					</span>
+				</Show>
+				<span class="status-item">
+					{props.folderCount} {props.folderCount === 1 ? "folder" : "folders"},{" "}
+					{props.fileCount} {props.fileCount === 1 ? "file" : "files"}
+				</span>
 				{props.selectionCount > 0 && (
 					<span class="status-item selection">
 						{props.selectionCount}{" "}
 						{props.selectionCount === 1 ? "item" : "items"} selected
+						{props.selectedSize > 0 && ` (${formatBytes(props.selectedSize)})`}
 					</span>
 				)}
 			</div>

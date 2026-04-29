@@ -38,10 +38,43 @@ export function useFolderSizes() {
 		setCalculating(new Set());
 	};
 
+	// Background calculation queue
+	let queue: string[] = [];
+	let activeWorkers = 0;
+	const MAX_CONCURRENCY = 4;
+
+	const processQueue = async () => {
+		if (activeWorkers >= MAX_CONCURRENCY || queue.length === 0) return;
+
+		const path = queue.shift();
+		if (!path) return;
+
+		activeWorkers++;
+		await calculateSize(path);
+		activeWorkers--;
+
+		// Continue processing
+		if (queue.length > 0) {
+			setTimeout(processQueue, 50); // slight delay to prevent UI starvation
+		}
+	};
+
+	const queueSizeCalculation = (path: string) => {
+		if (
+			sizes()[path] !== undefined ||
+			calculating().has(path) ||
+			queue.includes(path)
+		)
+			return;
+		queue.push(path);
+		processQueue();
+	};
+
 	return {
 		sizes,
 		calculating,
 		calculateSize,
+		queueSizeCalculation,
 		clearCache,
 	};
 }

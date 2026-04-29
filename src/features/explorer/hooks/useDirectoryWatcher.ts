@@ -12,25 +12,29 @@ export function useDirectoryWatcher(opts: WatcherOptions) {
 		const path = opts.currentPath();
 		if (!path || path === "home") return;
 
-		let unlisten: (() => void) | undefined;
+		// Skip location IDs that haven't been resolved to absolute paths yet
+		if (!path.startsWith("/") && !path.includes(":\\")) return;
+
 		let isActive = true;
 
 		// Start native watcher
-		invoke("watch_directory", { path }).catch(console.error);
+		invoke("watch_directory", { path }).catch((err) => {
+			if (err !== "Path is not a valid directory") {
+				console.error("[Watcher Error]", err);
+			}
+		});
 
 		// Listen for change events from Rust
-		listen("directory-changed", () => {
+		const unlistenPromise = listen("directory-changed", () => {
 			if (isActive) {
 				opts.onChanged();
 			}
-		}).then((fn) => {
-			unlisten = fn;
 		});
 
 		onCleanup(() => {
 			isActive = false;
 			invoke("unwatch_directory").catch(console.error);
-			if (unlisten) unlisten();
+			unlistenPromise.then((f) => f());
 		});
 	});
 }

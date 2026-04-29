@@ -20,11 +20,7 @@ export function createDragDropManager(config: {
 	const [draggedIds, setDraggedIds] = createSignal<string[] | null>(null);
 	const [isDraggingExternal, setIsDraggingExternal] = createSignal(false);
 
-	const onDragStart = async (
-		e: DragEvent,
-		ids: string[],
-		fileName: string,
-	) => {
+	const onDragStart = async (e: DragEvent, ids: string[], fileName: string) => {
 		if (ids.length === 0) return;
 		setDraggedIds(ids);
 

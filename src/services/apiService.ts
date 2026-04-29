@@ -37,7 +37,17 @@ export interface StorageStats {
 export interface IFileSystemService {
 	getUserLocations(): Promise<NavigationLocation[]>;
 	getStorageStats(): Promise<StorageStats>;
-	listDirectory(path: string, showHidden?: boolean): Promise<FileEntry[]>;
+	listDirectory(
+		path: string,
+		options?: {
+			sort_by?: string;
+			sort_order?: string;
+			offset?: number;
+			limit?: number;
+			search?: string;
+			show_hidden?: boolean;
+		},
+	): Promise<[FileEntry[], number]>;
 	searchFiles(rootPath: string, query: string): Promise<FileEntry[]>;
 	openItem(path: string): Promise<void>;
 	moveToTrash(paths: string[]): Promise<void>;
@@ -48,11 +58,17 @@ export interface IFileSystemService {
 	copyItems(sources: string[], targetDir: string): Promise<void>;
 	moveItems(sources: string[], targetDir: string): Promise<void>;
 	duplicateItems(paths: string[]): Promise<void>;
+	compressItems(sources: string[], outputPath: string): Promise<void>;
+	extractArchive(path: string, targetDir: string): Promise<void>;
 	openInTerminal(path: string): Promise<void>;
 	calculateDirSize(path: string): Promise<number>;
-	readFilePreview(path: string, maxBytes?: number): Promise<string>;
+	readFilePreview(
+		path: string,
+		maxBytes?: number,
+	): Promise<{ content: string; is_binary: boolean }>;
 	readFileContent(path: string): Promise<string>;
 	writeFileContent(path: string, content: string): Promise<void>;
+	getItemsMetadata(paths: string[]): Promise<FileEntry[]>;
 }
 
 /**
@@ -83,8 +99,8 @@ export class TauriFileSystemService implements IFileSystemService {
 	async getStorageStats() {
 		return invoke<StorageStats>("get_storage_stats");
 	}
-	async listDirectory(path: string, showHidden?: boolean) {
-		return invoke<FileEntry[]>("list_directory", { path, showHidden });
+	async listDirectory(path: string, options: any = { show_hidden: false }) {
+		return invoke<[FileEntry[], number]>("list_directory", { path, options });
 	}
 	async searchFiles(rootPath: string, query: string) {
 		return invoke<FileEntry[]>("search_files", { rootPath, query });
@@ -116,6 +132,12 @@ export class TauriFileSystemService implements IFileSystemService {
 	async duplicateItems(paths: string[]) {
 		return invoke<void>("duplicate_items", { paths });
 	}
+	async compressItems(sources: string[], outputPath: string) {
+		return invoke<void>("compress_items", { sources, outputPath });
+	}
+	async extractArchive(path: string, targetDir: string) {
+		return invoke<void>("extract_archive", { path, targetDir });
+	}
 	async openInTerminal(path: string) {
 		return invoke("open_in_terminal", { path });
 	}
@@ -123,13 +145,19 @@ export class TauriFileSystemService implements IFileSystemService {
 		return invoke<number>("calculate_dir_size", { path });
 	}
 	async readFilePreview(path: string, maxBytes?: number) {
-		return invoke<string>("read_file_preview", { path, maxBytes });
+		return invoke<{ content: string; is_binary: boolean }>(
+			"read_file_preview",
+			{ path, maxBytes },
+		);
 	}
 	async readFileContent(path: string) {
 		return invoke<string>("read_file_content", { path });
 	}
 	async writeFileContent(path: string, content: string) {
 		return invoke<void>("write_file_content", { path, content });
+	}
+	async getItemsMetadata(paths: string[]) {
+		return invoke<any[]>("get_items_metadata", { paths });
 	}
 }
 

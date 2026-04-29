@@ -5,7 +5,9 @@ interface ContextMenuOptions {
 	selection: { selectedIds: () => string[] };
 	ops: {
 		clipboard: () => string[];
-		execute: (op: import("../modules/FileSystemManager").FileOperation) => Promise<void>;
+		execute: (
+			op: import("../modules/FileSystemManager").FileOperation,
+		) => Promise<void>;
 		copy: (ids: string[]) => void;
 		paste: (targetPath: string) => Promise<void>;
 	};
@@ -25,6 +27,9 @@ interface ContextMenuOptions {
 		) => void;
 		setInfoModal: (
 			config: import("../components/ExplorerModals").InfoModal | null,
+		) => void;
+		setBatchRenameConfig: (
+			config: import("../components/BatchRenameModal").BatchRenameConfig | null,
 		) => void;
 		openInTerminal: (path: string) => void;
 		addFavorite: (path: string, label: string) => void;
@@ -122,9 +127,7 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 					label: "Get Info",
 					icon: "Info",
 					action: () => {
-						const item = opts.resources
-							.items()
-							.find((f) => f.id === firstId);
+						const item = opts.resources.items().find((f) => f.id === firstId);
 						if (item) opts.handlers.setInfoModal({ file: item });
 					},
 				},
@@ -159,21 +162,87 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 					}),
 			},
 			{
+				label: "Compress",
+				icon: "FileArchive",
+				action: () => {
+					const defaultName =
+						count === 1
+							? `${opts.resources.items().find((f) => f.id === firstId)?.name}.zip`
+							: "Archive.zip";
+					opts.handlers.setPromptConfig({
+						title: "Compress Items",
+						defaultValue: defaultName,
+						onSubmit: (name: string) => {
+							const outputPath = root.endsWith("/")
+								? `${root}${name}`
+								: `${root}/${name}`;
+							opts.ops.execute({
+								type: "compress",
+								sources: opts.selection.selectedIds(),
+								outputPath,
+							});
+						},
+					});
+				},
+			},
+			...(count === 1 &&
+			opts.resources
+				.items()
+				.find((f) => f.id === firstId)
+				?.name.toLowerCase()
+				.endsWith(".zip")
+				? [
+						{
+							label: "Extract",
+							icon: "Package",
+							action: () => {
+								opts.ops.execute({
+									type: "extract",
+									path: firstId,
+									targetDir: root,
+								});
+							},
+						},
+					]
+				: []),
+			{
+				label: "Copy as Pathname",
+				icon: "Terminal",
+				action: () => {
+					const paths = opts.selection.selectedIds().join("\n");
+					navigator.clipboard.writeText(paths);
+				},
+			},
+			{
 				label: "Rename",
 				icon: "Pencil",
 				action: () => {
-					const item = opts.resources.items().find((f) => f.id === firstId);
-					opts.handlers.setPromptConfig({
-						title: "Rename Item",
-						defaultValue: item?.name,
-						onSubmit: (newName: string) =>
-							opts.ops.execute({
-								type: "rename",
-								id: firstId,
-								newName,
-								oldName: item?.name,
-							}),
-					});
+					if (count > 1) {
+						const selectedItems = opts.resources
+							.items()
+							.filter((f) => opts.selection.selectedIds().includes(f.id));
+						opts.handlers.setBatchRenameConfig({
+							items: selectedItems,
+							onSubmit: (results) =>
+								opts.ops.execute({
+									type: "batchRename",
+									items: results,
+								}),
+						});
+					} else {
+						const item = opts.resources.items().find((f) => f.id === firstId);
+						opts.handlers.setPromptConfig({
+							title: "Rename Item",
+							defaultValue: item?.name,
+							onSubmit: (newName: string) =>
+								opts.ops.execute({
+									type: "rename",
+									id: firstId,
+									newName,
+									oldName: item?.name,
+								}),
+						});
+					}
 				},
 				separator: true,
 			},
@@ -210,6 +279,16 @@ export function useExplorerContextMenu(opts: ContextMenuOptions) {
 									.items()
 									.find((f) => f.id === firstId);
 								if (item) opts.handlers.addFavorite(item.id, item.name);
+							},
+							separator: true,
+						},
+						{
+							label: "Open in New Window",
+							icon: "Window",
+							action: () => {
+								import("@tauri-apps/api/core").then(({ invoke }) => {
+									invoke("open_new_window", { path: firstId });
+								});
 							},
 							separator: true,
 						},
