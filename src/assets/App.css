@@ -997,6 +997,13 @@ html {
 	justify-content: flex-start;
 	padding: 14px 8px 10px;
 	border-radius: var(--radius-md);
+	border: 1px solid transparent;
+	cursor: default;
+	transition: all var(--transition-fast);
+	text-align: center;
+	position: relative;
+}
+
 /* --- Task Drawer --- */
 .task-drawer {
 	position: fixed;
@@ -1100,12 +1107,6 @@ html {
 	color: var(--accent) !important;
 	border-radius: 4px;
 	box-shadow: 0 0 0 2px var(--accent);
-}
-	border: 1px solid transparent;
-	cursor: default;
-	transition: all var(--transition-fast);
-	text-align: center;
-	position: relative;
 }
 
 .grid-item:hover {
