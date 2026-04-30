@@ -1,5 +1,6 @@
 // src/features/explorer/components/FileBrowser/ListView.tsx
 import { createEffect, For, Show } from "solid-js";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { formatDate, formatSize } from "../../../../utils/formatters";
 import type { FileItem } from "../../../../utils/mockData";
 import { useFileItem } from "../../hooks/useFileItem";
@@ -24,7 +25,7 @@ const Row = (props: {
 		onOpen,
 		onCalculateSize,
 		dragHandlers,
-	} = useFileItem(props.file);
+	} = useFileItem(props);
 
 	return (
 		// biome-ignore lint/a11y/useSemanticElements: row is appropriate
@@ -109,6 +110,15 @@ export const ListView = (props: ListViewProps) => {
 		}
 	});
 
+	let parentRef: HTMLDivElement | undefined;
+
+	const rowVirtualizer = createVirtualizer({
+		get count() { return props.files.length; },
+		getScrollElement: () => parentRef,
+		estimateSize: () => 40,
+		overscan: 10,
+	});
+
 	return (
 		<div class="list-view">
 			<div class="list-header">
@@ -119,11 +129,38 @@ export const ListView = (props: ListViewProps) => {
 			</div>
 			<div
 				class="list-body"
+				ref={parentRef}
 				style={{ overflow: "auto", flex: "1", "min-height": "0" }}
 			>
-				<For each={props.files}>
-					{(file) => <Row file={file} onInteract={props.onItemInteract} />}
-				</For>
+				<div
+					style={{
+						height: `${rowVirtualizer.getTotalSize()}px`,
+						width: "100%",
+						position: "relative",
+					}}
+				>
+					<For each={rowVirtualizer.getVirtualItems()}>
+						{(virtualRow) => (
+							<div
+								style={{
+									position: "absolute",
+									top: 0,
+									left: 0,
+									width: "100%",
+									height: `${virtualRow.size}px`,
+									transform: `translateY(${virtualRow.start}px)`,
+								}}
+							>
+								<Show when={props.files[virtualRow.index]}>
+									<Row 
+										file={props.files[virtualRow.index]} 
+										onInteract={props.onItemInteract} 
+									/>
+								</Show>
+							</div>	
+						)}
+					</For>
+				</div>
 			</div>
 		</div>
 	);

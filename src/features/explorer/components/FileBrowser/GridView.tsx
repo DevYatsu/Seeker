@@ -1,5 +1,6 @@
 // src/features/explorer/components/FileBrowser/GridView.tsx
-import { createEffect, createSignal, For, Show, onMount } from "solid-js";
+import { createEffect, createSignal, createMemo, For, Show, onMount, onCleanup } from "solid-js";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { formatSize } from "../../../../utils/formatters";
 import type { FileItem } from "../../../../utils/mockData";
 import { useFileItem } from "../../hooks/useFileItem";
@@ -25,7 +26,7 @@ const GridItem = (props: {
 		onOpen,
 		onCalculateSize,
 		dragHandlers,
-	} = useFileItem(props.file);
+	} = useFileItem(props);
 	const { gridZoom } = useSettings();
 
 	return (
@@ -84,6 +85,45 @@ const GridItem = (props: {
 
 export const GridView = (props: GridViewProps) => {
 	const { fetchMetadata } = useExplorer();
+	let parentRef!: HTMLDivElement;
+	const [containerWidth, setContainerWidth] = createSignal(800);
+
+	onMount(() => {
+		const observer = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				setContainerWidth(entry.contentRect.width);
+			}
+		});
+		observer.observe(parentRef);
+		onCleanup(() => observer.disconnect());
+	});
+
+	// Grid layout calculations matching CSS:
+	// grid-template-columns: repeat(auto-fill, minmax(108px, 1fr))
+	// padding: 16px, gap: 4px
+	const itemMinWidth = 108;
+	const gap = 4;
+	const padding = 32;
+
+	const columns = createMemo(() => {
+		const cols = Math.floor(
+			(containerWidth() - padding + gap) / (itemMinWidth + gap),
+		);
+		return Math.max(1, cols);
+	});
+
+	const rowCount = createMemo(() =>
+		Math.ceil(props.files.length / columns()),
+	);
+
+	const rowVirtualizer = createVirtualizer({
+		get count() {
+			return rowCount();
+		},
+		getScrollElement: () => parentRef,
+		estimateSize: () => 120, // Approximate height of a grid item
+		overscan: 4,
+	});
 
 	// Hydration: fetch metadata for first batch
 	createEffect(() => {
@@ -100,12 +140,51 @@ export const GridView = (props: GridViewProps) => {
 
 	return (
 		<div
+			ref={parentRef}
 			class="grid-view-container"
-			style={{ overflow: "auto", flex: "1", "min-height": "0" }}
+			style={{ overflow: "auto", flex: "1", "min-height": "0", position: "relative" }}
 		>
-			<div class="grid-view">
-				<For each={props.files}>
-					{(file) => <GridItem file={file} onInteract={props.onItemInteract} />}
+			<div
+				style={{
+					height: `${rowVirtualizer.getTotalSize() + padding}px`,
+					width: "100%",
+					position: "relative",
+				}}
+			>
+				<For each={rowVirtualizer.getVirtualItems()}>
+					{(virtualRow) => {
+						const startIndex = virtualRow.index * columns();
+						const endIndex = Math.min(
+							startIndex + columns(),
+							props.files.length,
+						);
+						const rowFiles = () => props.files.slice(startIndex, endIndex);
+
+						return (
+							<div
+								style={{
+									position: "absolute",
+									top: "0",
+									left: "16px",
+									right: "16px",
+									height: `${virtualRow.size}px`,
+									transform: `translateY(${virtualRow.start + 16}px)`,
+									display: "grid",
+									"grid-template-columns": `repeat(${columns()}, 1fr)`,
+									gap: `${gap}px`,
+								}}
+							>
+								<For each={rowFiles()}>
+									{(file) => (
+										<GridItem
+											file={file}
+											onInteract={props.onItemInteract}
+										/>
+									)}
+								</For>
+							</div>
+						);
+					}}
 				</For>
 			</div>
 		</div>

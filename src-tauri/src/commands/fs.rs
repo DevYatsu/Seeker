@@ -11,6 +11,26 @@ use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+#[derive(Clone)]
+pub struct DirectoryCache {
+    pub current_path: Arc<Mutex<String>>,
+    pub entries: Arc<Mutex<Vec<FileEntry>>>,
+}
+
+impl DirectoryCache {
+    pub fn new() -> Self {
+        Self {
+            current_path: Arc::new(Mutex::new(String::new())),
+            entries: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+    pub fn invalidate(&self) {
+        if let Ok(mut path) = self.current_path.lock() {
+            *path = String::new();
+        }
+    }
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct FileEntry {
     pub name: String,
@@ -70,15 +90,16 @@ fn validate_path(path: &str) -> Result<(), String> {
         return Err("Path does not exist".into());
     }
 
-    // Basic security: prevent directory traversal
-    if path.contains("..") {
-        return Err("Invalid path: directory traversal not allowed".into());
-    }
+    let resolved = std::fs::canonicalize(p).map_err(|e| e.to_string())?;
+    let resolved_str = resolved.to_string_lossy();
 
     // Ensure we are not accessing sensitive system roots directly
-    let forbidden = ["/etc", "/var", "/bin", "/sbin", "/usr/bin", "/usr/sbin"];
+    let forbidden = [
+        "/etc", "/var", "/bin", "/sbin", "/usr/bin", "/usr/sbin",
+        "/private/etc", "/private/var"
+    ];
     for f in forbidden {
-        if path == f || path.starts_with(&format!("{}/", f)) {
+        if resolved_str == f || resolved_str.starts_with(&format!("{}/", f)) {
              return Err(format!("Access to {} is restricted", f));
         }
     }
@@ -96,47 +117,77 @@ pub struct ListOptions {
     pub limit: Option<usize>,
     pub search: Option<String>,
     pub show_hidden: Option<bool>,
+    pub known_paths: Option<Vec<String>>,
+}
+
+#[derive(serde::Serialize)]
+pub struct ListResult {
+    pub paths: Vec<String>,
+    pub new_entries: Vec<FileEntry>,
+    pub total_count: usize,
 }
 
 #[tauri::command]
-pub fn list_directory(path: String, options: ListOptions) -> Result<(Vec<FileEntry>, usize), String> {
+pub fn list_directory(
+    path: String, 
+    options: ListOptions,
+    cache: tauri::State<'_, DirectoryCache>
+) -> Result<ListResult, String> {
     validate_path(&path)?;
     
-    // For now, Trash still returns everything
+    // For now, Trash still returns everything as new entries
     if path.contains(".Trash") {
         let entries = list_trash(&path)?;
         let count = entries.len();
-        return Ok((entries, count));
+        let paths = entries.iter().map(|e| e.path.clone()).collect();
+        return Ok(ListResult {
+            paths,
+            new_entries: entries,
+            total_count: count,
+        });
     }
 
     let hide_hidden = !options.show_hidden.unwrap_or(false);
     
-    let entries_res: Result<Vec<_>, _> = std::fs::read_dir(&path)
-        .map_err(|e| e.to_string())?
-        .collect();
-    
-    let all_entries = entries_res.map_err(|e| e.to_string())?;
-    
-    let mut files: Vec<FileEntry> = all_entries
-        .into_par_iter()
-        .filter_map(|entry| {
-            let entry_path = entry.path();
-            let name = entry_path.file_name()?.to_string_lossy();
-            
-            if hide_hidden && name.starts_with('.') {
-                return None;
-            }
+    let needs_refresh = {
+        let current = cache.current_path.lock().unwrap();
+        *current != path
+    };
 
-            // Search filter (if provided)
+    if needs_refresh {
+        let entries_res: Result<Vec<_>, _> = std::fs::read_dir(&path)
+            .map_err(|e| e.to_string())?
+            .collect();
+        
+        let all_entries = entries_res.map_err(|e| e.to_string())?;
+        
+        let files: Vec<FileEntry> = all_entries
+            .into_par_iter()
+            .filter_map(|entry| FileEntry::fast_from_path(&entry))
+            .collect();
+
+        let mut entries_guard = cache.entries.lock().unwrap();
+        *entries_guard = files;
+
+        let mut path_guard = cache.current_path.lock().unwrap();
+        *path_guard = path.clone();
+    }
+
+    let entries_guard = cache.entries.lock().unwrap();
+    let mut files: Vec<FileEntry> = entries_guard
+        .iter()
+        .filter(|f| {
+            if hide_hidden && f.name.starts_with('.') {
+                return false;
+            }
             if let Some(ref search) = options.search {
-                if !name.to_lowercase().contains(&search.to_lowercase()) {
-                    return None;
+                if !f.name.to_lowercase().contains(&search.to_lowercase()) {
+                    return false;
                 }
             }
-
-            // Optimization: Always return basic info first
-            FileEntry::fast_from_path(&entry)
+            true
         })
+        .cloned()
         .collect();
 
     let total_count = files.len();
@@ -148,6 +199,8 @@ pub fn list_directory(path: String, options: ListOptions) -> Result<(Vec<FileEnt
     files.par_sort_unstable_by(|a, b| {
         let comparison = match sort_by.as_str() {
             "name" => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            "size" => a.size.unwrap_or(0).cmp(&b.size.unwrap_or(0)),
+            "date" => a.updated_at.unwrap_or(0).cmp(&b.updated_at.unwrap_or(0)),
             _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
         };
         
@@ -167,12 +220,34 @@ pub fn list_directory(path: String, options: ListOptions) -> Result<(Vec<FileEnt
     
     let end = (offset + limit).min(total_count);
     if offset >= total_count {
-        return Ok((vec![], total_count));
+        return Ok(ListResult {
+            paths: vec![],
+            new_entries: vec![],
+            total_count,
+        });
     }
 
-    let paged_files = files[offset..end].to_vec();
+    let paged_files = &files[offset..end];
     
-    Ok((paged_files, total_count))
+    let mut paths = Vec::with_capacity(paged_files.len());
+    let mut new_entries = Vec::new();
+    
+    let known_paths = options.known_paths.unwrap_or_default();
+    use std::collections::HashSet;
+    let known_set: HashSet<&String> = known_paths.iter().collect();
+
+    for file in paged_files {
+        paths.push(file.path.clone());
+        if !known_set.contains(&file.path) {
+            new_entries.push(file.clone());
+        }
+    }
+    
+    Ok(ListResult {
+        paths,
+        new_entries,
+        total_count,
+    })
 }
 
 #[tauri::command]
@@ -323,12 +398,20 @@ pub fn rename_item(path: String, new_name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn create_directory(parent_path: String, name: String) -> Result<(), String> {
+    validate_path(&parent_path)?;
+    if name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err("Invalid characters in directory name".into());
+    }
     let path = Path::new(&parent_path).join(name);
     std::fs::create_dir_all(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn create_file(parent_path: String, name: String) -> Result<(), String> {
+    validate_path(&parent_path)?;
+    if name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err("Invalid characters in file name".into());
+    }
     let path = Path::new(&parent_path).join(name);
     std::fs::File::create(path)
         .map(|_| ())
@@ -366,7 +449,10 @@ pub fn copy_items(sources: Vec<String>, target_dir: String) -> Result<(), String
 
 #[tauri::command]
 pub fn move_items(sources: Vec<String>, target_dir: String) -> Result<(), String> {
+    validate_path(&target_dir)?;
+    
     sources.into_par_iter().try_for_each(|source| {
+        validate_path(&source)?;
         let source_path = Path::new(&source);
         let name = source_path.file_name().ok_or("Invalid source name")?;
         let target_path = Path::new(&target_dir).join(name);

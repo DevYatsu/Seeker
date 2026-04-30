@@ -1,5 +1,6 @@
 // src/features/explorer/modules/FileSystemManager.ts
-import { createSignal, createSelector } from "solid-js";
+import { createSignal, createSelector, onCleanup } from "solid-js";
+import { listen } from "@tauri-apps/api/event";
 import { fileSystem } from "../../../services/apiService";
 import type { FileItem } from "../../../utils/mockData";
 
@@ -38,6 +39,15 @@ export function createFileSystemManager(config: FileSystemConfig) {
 		"copy",
 	);
 	const isClipboardItem = createSelector(clipboard);
+
+	const unlistenPromise = listen("directory-changed", () => {
+		config.refresh();
+	});
+
+	onCleanup(async () => {
+		const unlisten = await unlistenPromise;
+		unlisten();
+	});
 
 	const calculateInverse = (op: FileOperation): FileOperation | null => {
 		switch (op.type) {

@@ -13,7 +13,7 @@ const MAX_RESULTS: usize = 100;
 /// Time budget: return whatever we have after this duration
 const TIME_BUDGET: Duration = Duration::from_millis(400);
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct SearchResult {
     pub name: String,
     pub path: String,
@@ -22,19 +22,32 @@ pub struct SearchResult {
     pub updated_at: u64,
 }
 
+#[derive(Serialize)]
+pub struct SearchDeltaResult {
+    pub paths: Vec<String>,
+    pub new_entries: Vec<SearchResult>,
+}
+
 #[tauri::command]
-pub async fn search_files(root_path: String, query: String) -> Vec<SearchResult> {
+pub async fn search_files(
+    root_path: String, 
+    query: String,
+    known_paths: Option<Vec<String>>
+) -> SearchDeltaResult {
     if query.len() < 2 {
-        return Vec::new();
+        return SearchDeltaResult {
+            paths: Vec::new(),
+            new_entries: Vec::new(),
+        };
     }
 
     // Run the blocking walk on a background thread so we don't freeze the UI
-    tokio::task::spawn_blocking(move || search_blocking(&root_path, &query))
+    tokio::task::spawn_blocking(move || search_blocking(&root_path, &query, known_paths.unwrap_or_default()))
         .await
-        .unwrap_or_default()
+        .unwrap()
 }
 
-fn search_blocking(root_path: &str, query: &str) -> Vec<SearchResult> {
+fn search_blocking(root_path: &str, query: &str, known_paths: Vec<String>) -> SearchDeltaResult {
     let results = Arc::new(Mutex::new(Vec::with_capacity(MAX_RESULTS)));
     let seen_paths = Arc::new(Mutex::new(HashSet::with_capacity(MAX_RESULTS)));
     let should_stop = Arc::new(AtomicBool::new(false));
@@ -130,5 +143,19 @@ fn search_blocking(root_path: &str, query: &str) -> Vec<SearchResult> {
         }
     });
 
-    final_results
+    let mut paths = Vec::with_capacity(final_results.len());
+    let mut new_entries = Vec::new();
+    let known_set: HashSet<&String> = known_paths.iter().collect();
+
+    for res in final_results {
+        paths.push(res.path.clone());
+        if !known_set.contains(&res.path) {
+            new_entries.push(res);
+        }
+    }
+
+    SearchDeltaResult {
+        paths,
+        new_entries,
+    }
 }

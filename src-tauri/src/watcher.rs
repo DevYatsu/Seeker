@@ -23,6 +23,7 @@ pub fn watch_directory(
     path: String,
     app_handle: AppHandle,
     state: State<'_, WatcherState>,
+    cache: State<'_, crate::commands::fs::DirectoryCache>,
 ) -> std::result::Result<(), String> {
     let path_buf = PathBuf::from(&path);
     if !path_buf.exists() || !path_buf.is_dir() {
@@ -42,12 +43,13 @@ pub fn watch_directory(
 
     // Setup new debouncer
     let app_handle_clone = app_handle.clone();
+    let cache_clone = cache.inner().clone();
     let mut debouncer = new_debouncer(
         Duration::from_millis(200),
         move |res: DebounceEventResult| {
             match res {
                 Ok(_) => {
-                    // We just emit a generic refresh event. The frontend will decide if it needs to refresh.
+                    cache_clone.invalidate();
                     let _ = app_handle_clone.emit("directory-changed", ());
                 }
                 Err(e) => println!("Watch error: {:?}", e),

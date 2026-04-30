@@ -8,6 +8,7 @@ import {
 	createEffect,
 	Suspense,
 } from "solid-js";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { fileSystem } from "../../../../services/apiService";
 import type { FileItem } from "../../../../utils/mockData";
 import { FileIcon } from "./FileIcon";
@@ -189,8 +190,8 @@ const Column = (props: ColumnProps) => {
 		() => props.path,
 		async (path) => {
 			if (!path) return [];
-			const results = await fileSystem.listDirectory(path);
-			return results.map(
+			const [files] = await fileSystem.listDirectory(path);
+			return files.map(
 				(r) =>
 					({
 						id: r.path,
@@ -205,30 +206,70 @@ const Column = (props: ColumnProps) => {
 	);
 
 	const items = () => props.files || data() || [];
+	let listRef!: HTMLDivElement;
+
+	const rowVirtualizer = createVirtualizer({
+		get count() {
+			return items().length;
+		},
+		getScrollElement: () => listRef,
+		estimateSize: () => 26, // Approximate height of .column-item
+		overscan: 10,
+	});
 
 	return (
 		<div class="column-pane">
-			<div class="column-list">
-				<For each={items()}>
-					{(item) => (
-						<div
-							class="column-item"
-							classList={{ active: props.activeId === item.id }}
-							onClick={(e) => props.onItemClick(e, item)}
-							onDblClick={() => props.onDblClick(item)}
-						>
-							<FileIcon
-								id={item.id}
-								type={item.type}
-								name={item.name}
-								pack={props.iconPack()}
-								size={18}
-							/>
-							<span class="item-name">{item.name}</span>
-							{item.type === "folder" && <span class="folder-arrow">›</span>}
-						</div>
-					)}
-				</For>
+			<div
+				class="column-list"
+				ref={listRef}
+				style={{ "overflow-y": "auto", position: "relative" }}
+			>
+				<div
+					style={{
+						height: `${rowVirtualizer.getTotalSize()}px`,
+						width: "100%",
+						position: "relative",
+					}}
+				>
+					<For each={rowVirtualizer.getVirtualItems()}>
+						{(virtualRow) => {
+							const item = () => items()[virtualRow.index];
+							return (
+								<Show when={item()}>
+									<div
+										style={{
+											position: "absolute",
+											top: 0,
+											left: 0,
+											width: "100%",
+											height: `${virtualRow.size}px`,
+											transform: `translateY(${virtualRow.start}px)`,
+										}}
+									>
+										<div
+											class="column-item"
+											classList={{ active: props.activeId === item().id }}
+											onClick={(e) => props.onItemClick(e, item())}
+											onDblClick={() => props.onDblClick(item())}
+										>
+											<FileIcon
+												id={item().id}
+												type={item().type}
+												name={item().name}
+												pack={props.iconPack()}
+												size={18}
+											/>
+											<span class="item-name">{item().name}</span>
+											{item().type === "folder" && (
+												<span class="folder-arrow">›</span>
+											)}
+										</div>
+									</div>
+								</Show>
+							);
+						}}
+					</For>
+				</div>
 			</div>
 		</div>
 	);

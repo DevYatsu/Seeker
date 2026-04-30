@@ -31,6 +31,15 @@ export interface StorageStats {
 	disks: DiskInfo[];
 }
 
+export interface ListOptions {
+	sort_by?: string;
+	sort_order?: string;
+	offset?: number;
+	limit?: number;
+	search?: string;
+	show_hidden?: boolean;
+}
+
 /**
  * Interface defining the contract for File System operations.
  */
@@ -39,14 +48,7 @@ export interface IFileSystemService {
 	getStorageStats(): Promise<StorageStats>;
 	listDirectory(
 		path: string,
-		options?: {
-			sort_by?: string;
-			sort_order?: string;
-			offset?: number;
-			limit?: number;
-			search?: string;
-			show_hidden?: boolean;
-		},
+		options?: ListOptions,
 	): Promise<[FileEntry[], number]>;
 	searchFiles(rootPath: string, query: string): Promise<FileEntry[]>;
 	openItem(path: string): Promise<void>;
@@ -93,17 +95,70 @@ export interface IResourceService {
  * Tauri implementation of the FileSystemService.
  */
 export class TauriFileSystemService implements IFileSystemService {
+	private entryCache = new Map<string, FileEntry>();
+	private entryCacheKeys: string[] = [];
+	private currentListPath = "";
+
+	private searchCache = new Map<string, FileEntry>();
+	private searchCacheKeys: string[] = [];
+	private currentSearchQuery = "";
+	private currentSearchRoot = "";
+
 	async getUserLocations() {
 		return invoke<NavigationLocation[]>("get_user_locations");
 	}
 	async getStorageStats() {
 		return invoke<StorageStats>("get_storage_stats");
 	}
-	async listDirectory(path: string, options: any = { show_hidden: false }) {
-		return invoke<[FileEntry[], number]>("list_directory", { path, options });
+	async listDirectory(path: string, options: ListOptions = { show_hidden: false }) {
+		if (this.currentListPath !== path) {
+			this.entryCache.clear();
+			this.entryCacheKeys = [];
+			this.currentListPath = path;
+		}
+
+		const invokeOptions: any = { ...options, known_paths: this.entryCacheKeys };
+
+		const result = await invoke<{
+			paths: string[];
+			new_entries: FileEntry[];
+			total_count: number;
+		}>("list_directory", { path, options: invokeOptions });
+
+		console.log(`[IPC Delta] Received ${result.paths.length} paths, ${result.new_entries.length} new entries`);
+
+		for (const entry of result.new_entries) {
+			this.entryCache.set(entry.path, entry);
+			this.entryCacheKeys.push(entry.path);
+		}
+
+		const files = result.paths
+			.map((p) => this.entryCache.get(p))
+			.filter(Boolean) as FileEntry[];
+
+		return [files, result.total_count] as [FileEntry[], number];
 	}
 	async searchFiles(rootPath: string, query: string) {
-		return invoke<FileEntry[]>("search_files", { rootPath, query });
+		if (this.currentSearchQuery !== query || this.currentSearchRoot !== rootPath) {
+			this.searchCache.clear();
+			this.searchCacheKeys = [];
+			this.currentSearchQuery = query;
+			this.currentSearchRoot = rootPath;
+		}
+
+		const result = await invoke<{
+			paths: string[];
+			new_entries: FileEntry[];
+		}>("search_files", { rootPath, query, knownPaths: this.searchCacheKeys });
+
+		for (const entry of result.new_entries) {
+			this.searchCache.set(entry.path, entry);
+			this.searchCacheKeys.push(entry.path);
+		}
+
+		return result.paths
+			.map((p) => this.searchCache.get(p) || this.entryCache.get(p))
+			.filter(Boolean) as FileEntry[];
 	}
 	async openItem(path: string) {
 		return invoke("open_item", { path });

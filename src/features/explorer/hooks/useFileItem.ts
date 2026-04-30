@@ -7,26 +7,26 @@ import { createEffect } from "solid-js";
 /**
  * Shared logic for file items (Grid or List view).
  */
-export function useFileItem(file: FileItem) {
+export function useFileItem(props: { file: FileItem }) {
 	const { selection, ops, iconPack, folderSizes, handlers } = useExplorer();
 
-	const isSelected = () => selection.isSelected(file.id);
+	const isSelected = () => selection.isSelected(props.file.id);
 	const isCut = () =>
-		ops.clipboardMode() === "cut" && ops.isClipboardItem(file.id);
-	const size = () => folderSizes.sizes()[file.id];
-	const isCalculating = () => folderSizes.calculating().has(file.id);
+		ops.clipboardMode() === "cut" && ops.isClipboardItem(props.file.id);
+	const size = () => folderSizes.sizes()[props.file.id];
+	const isCalculating = () => folderSizes.calculating().has(props.file.id);
 
 	createEffect(() => {
-		const isApp = file.name.toLowerCase().endsWith(".app");
+		const isApp = props.file.name.toLowerCase().endsWith(".app");
 		if (
-			file.type === "folder" &&
+			props.file.type === "folder" &&
 			isApp &&
 			size() === undefined &&
 			!isCalculating()
 		) {
 			// Small timeout so it runs after initial render without blocking
 			setTimeout(() => {
-				folderSizes.queueSizeCalculation(file.id);
+				folderSizes.queueSizeCalculation(props.file.id);
 			}, 100);
 		}
 	});
@@ -37,16 +37,16 @@ export function useFileItem(file: FileItem) {
 		handleDragLeave: onDragLeave,
 		handleDrop: onDrop,
 	} = useFileDragDrop({
-		file,
+		get file() { return props.file; },
 		selected: isSelected,
 		selectedIds: selection.selectedIds,
 	});
 
-	const onOpen = () => handlers.onOpen(file.id);
+	const onOpen = () => handlers.onOpen(props.file.id);
 
 	const onCalculateSize = (e: MouseEvent) => {
 		e.stopPropagation();
-		folderSizes.calculateSize(file.id);
+		folderSizes.calculateSize(props.file.id);
 	};
 
 	return {
